@@ -386,14 +386,14 @@ function bankTurnScore(gameState) {
   const newTotal = player.totalScore + bankTotal;
   const minimumEntry = gameState.config ? gameState.config.minimumEntryScore || 0 : 0;
 
-  if (!player.hasEnteredGame && newTotal < minimumEntry) {
+  if (!player.hasEnteredGame && bankTotal < minimumEntry) {
     return { success: false, error: 'MINIMUM_ENTRY_NOT_MET' };
   }
 
   playersCopy[playerIndex] = {
     ...player,
     totalScore: newTotal,
-    hasEnteredGame: player.hasEnteredGame || newTotal >= minimumEntry
+    hasEnteredGame: player.hasEnteredGame || bankTotal >= minimumEntry
   };
 
   const interimGameState = {

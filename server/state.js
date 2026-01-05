@@ -214,8 +214,10 @@ function canPlayerBank(gameState, playerId) {
     return false;
   }
 
-  // Must have a valid selection
-  if (!gameState.turn.selection.isValid) {
+  const turn = gameState.turn;
+
+  // Must have a valid selection if dice are selected
+  if (!turn.selection.isValid) {
     return false;
   }
 
@@ -224,14 +226,15 @@ function canPlayerBank(gameState, playerId) {
     return false;
   }
 
-  // If player hasn't entered, total accumulated score must meet minimum
+  const selectionScore = turn.selection.selectionScore;
+  const minimumEntryScore = gameState.config ? gameState.config.minimumEntryScore || 0 : 0;
+  const bankableScore = turn.accumulatedTurnScore + selectionScore;
+
   if (!player.hasEnteredGame) {
-    const totalWithTurnScore = player.totalScore + gameState.turn.accumulatedTurnScore + gameState.turn.selection.selectionScore;
-    return totalWithTurnScore >= gameState.config.minimumEntryScore;
+    return bankableScore >= minimumEntryScore;
   }
 
-  // Once entered, can bank any positive score
-  return gameState.turn.accumulatedTurnScore + gameState.turn.selection.selectionScore > 0;
+  return bankableScore > 0;
 }
 
 /**

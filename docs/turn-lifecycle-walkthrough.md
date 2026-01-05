@@ -174,13 +174,13 @@ This walkthrough assumes compliance with:
 
 **Server preconditions:**
 - Selection is valid OR accumulatedTurnScore > 0
-- Minimum entry score satisfied (if player not yet entered)
+- If the player has not yet entered, the current bank amount must meet or exceed the minimum entry score
 
 **Server actions:**
 
 ```text
 1. Add accumulatedTurnScore (+ selectionScore if applicable) to player's totalScore
-2. If totalScore >= minimumEntryScore, set hasEnteredGame = true
+2. If banked amount >= minimumEntryScore (and player not yet entered), set hasEnteredGame = true
 3. Discard TurnState
 4. Advance activeTurnIndex
 5. Begin next player's turn
@@ -195,7 +195,7 @@ This walkthrough assumes compliance with:
 ## 6. Minimum Entry Score Edge Case
 
 **Scenario:**
-- Player attempts to bank below minimum entry score
+- Player attempts to bank below the minimum entry score before entering the game
 
 **Result:**
 
@@ -206,6 +206,8 @@ This walkthrough assumes compliance with:
 ```
 
 Client UI should normally prevent this action.
+
+Once the player has completed a qualifying bank, subsequent banks of any positive value succeed.
 
 ---
 
@@ -291,4 +293,3 @@ This document is authoritative for:
 - Handling disconnects and edge cases
 
 All turn-related logic must conform to this walkthrough.
-

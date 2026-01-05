@@ -139,8 +139,8 @@ Effect:
 ## 12. Minimum Entry Score
 
 - Default minimum entry score: **500**
-- Player may not bank until accumulated turn score ≥ minimum
-- Once entered, player may bank any positive score
+- Each player must bank at least the minimum in a single turn before any of their scores count (“entering the game”)
+- After a player has banked a qualifying turn, they may bank any positive score on later turns
 
 ---
 
@@ -190,4 +190,3 @@ This document is the authoritative source for:
 - Hot dice detection
 
 Any rule changes must be reflected here first.
-

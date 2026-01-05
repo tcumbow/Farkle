@@ -221,10 +221,10 @@ function runTests() {
   bankGame.turn.selection.isValid = true;
   bankGame.turn.selection.selectionScore = 100;
   bankGame.turn.accumulatedTurnScore = 0;
-  assertEquals(canPlayerBank(bankGame, 'p1'), false, 'Cannot bank below minimum (not entered)');
+  assertEquals(canPlayerBank(bankGame, 'p1'), false, 'Cannot bank below minimum in first banking attempt');
 
   bankGame.turn.accumulatedTurnScore = 400;
-  assertEquals(canPlayerBank(bankGame, 'p1'), true, 'Can bank when total meets minimum (400+100=500)');
+  assertEquals(canPlayerBank(bankGame, 'p1'), true, 'Can bank when current turn meets entry threshold (400+100=500)');
 
   p1.hasEnteredGame = true;
   bankGame.turn.accumulatedTurnScore = 0;

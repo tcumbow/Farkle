@@ -672,13 +672,12 @@ function registerSocketHandlers(io, serverState, options = {}) {
     }
 
     const minimumEntryScore = game.config ? game.config.minimumEntryScore || 0 : 0;
-    const projectedTotal = previousPlayer.totalScore + bankAmount;
-    if (!previousPlayer.hasEnteredGame && projectedTotal < minimumEntryScore) {
+    if (!previousPlayer.hasEnteredGame && bankAmount < minimumEntryScore) {
       emitError(socket, 'MINIMUM_ENTRY_NOT_MET', 'Reach the minimum entry score before banking.', {
         event: INCOMING_EVENTS.BANK_SCORE,
         playerId,
         minimumEntryScore,
-        projectedTotal,
+        bankAmount,
         accumulatedTurnScore: turn.accumulatedTurnScore,
         selectionScore
       });

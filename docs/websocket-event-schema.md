@@ -208,10 +208,11 @@ Errors are primarily diagnostic.
 
 **Preconditions:**
 - Valid dice selection OR accumulatedTurnScore > 0
-- Minimum entry score rules satisfied
+- If the player has not yet entered, the current banked amount must meet or exceed the minimum entry score
 
 **Server behavior:**
-- Add accumulatedTurnScore to player total
+- Add accumulatedTurnScore (+ selectionScore if applicable) to player total
+- Mark player as entered once they bank at least the minimum entry score in a single turn
 - Advance turn
 - Reset TurnState
 - Broadcast `game_state`
@@ -299,4 +300,3 @@ This event schema is authoritative for:
 - Debug logging
 
 Any gameplay change requires updating this document first.
-

@@ -79,6 +79,7 @@ This is a personal project optimized for simplicity, debuggability, and fidelity
 - Minimum entry score:
   - Default: 500
   - Adjustable on TV client before game start
+  - Applies once per player: their first successful bank in a game must meet or exceed this threshold in a single turn; afterwards they may bank any positive score
 - Hot dice:
   - Dice pool resets to 6
   - Accumulated turn score preserved

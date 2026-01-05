@@ -356,7 +356,7 @@ function runTests() {
     }
   };
 
-  withMockedRandomInts([1, 2, 3, 4, 5, 6], () => {
+  withMockedRandomInts(new Array(36).fill(1), () => {
     const hotResult = rollTurnDice(hotDiceState);
     assert(hotResult.success, 'rollTurnDice succeeds with hot dice selection');
     assertEquals(hotResult.outcome, 'hot_dice', 'Hot dice outcome reported');
@@ -434,13 +434,37 @@ function runTests() {
     }
   };
 
-  withMockedRandomInts([1, 2, 3, 4, 5, 6], () => {
+  withMockedRandomInts(new Array(36).fill(1), () => {
     const bankResult = bankTurnScore(bankState);
     assert(bankResult.success, 'bankTurnScore succeeds with valid selection');
     assertEquals(bankResult.gameState.players[0].totalScore, 650, 'Banked score added to player total');
     assert(bankResult.gameState.players[0].hasEnteredGame, 'Player marked as entered after surpassing minimum score');
     assertEquals(bankResult.gameState.activeTurnIndex, 1, 'Active turn index advances after banking');
     assertEquals(bankResult.gameState.turn.playerId, 'bp2', 'Next player becomes active after banking');
+
+    const reentryState = {
+      ...bankResult.gameState,
+      activeTurnIndex: 0,
+      turn: {
+        playerId: 'bp1',
+        dice: [
+          { value: 5, selectable: true },
+          { value: 2, selectable: true },
+          { value: 3, selectable: true }
+        ],
+        accumulatedTurnScore: 0,
+        selection: {
+          selectedIndices: [0],
+          isValid: true,
+          selectionScore: 50
+        },
+        status: 'awaiting_roll'
+      }
+    };
+
+    const smallBankResult = bankTurnScore(reentryState);
+    assert(smallBankResult.success, 'bankTurnScore allows small bank after player has entered');
+    assertEquals(smallBankResult.gameState.players[0].totalScore, 700, 'Small bank amount added after entry requirement met');
   });
 
   const entryFailPlayers = [

@@ -65,7 +65,7 @@ PlayerState = {
   name: string,
 
   totalScore: number,
-  hasEnteredGame: boolean, // true once minimum entry score reached
+  hasEnteredGame: boolean, // true once player banks at least the minimum entry score in a single turn
 
   connected: boolean,
 
@@ -211,4 +211,3 @@ This schema is the authoritative reference for:
 - Client rendering logic
 
 Any deviation requires updating this document.
-
