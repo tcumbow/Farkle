@@ -1,10 +1,12 @@
 /**
  * Socket.IO Event Registration
  *
- * Wires all Socket.IO event listeners using the canonical names defined in
- * docs/websocket-event-schema.md. Event logic is intentionally deferred; this
- * module only connects incoming events to optional callbacks.
+ * Implements identity-aware event handling for lobby joins, reconnection, and
+ * disconnect flow while wiring remaining events with placeholder handlers.
  */
+
+const crypto = require('crypto');
+const { createPlayerState, findPlayerById } = require('./state');
 
 const INCOMING_EVENTS = {
   RECONNECT_PLAYER: 'reconnect_player',
@@ -22,27 +24,191 @@ const SOCKET_LIFECYCLE_EVENTS = {
   DISCONNECT: 'disconnect'
 };
 
+const OUTGOING_EVENTS = {
+  GAME_STATE: 'game_state',
+  ERROR: 'error',
+  JOIN_SUCCESS: 'join_success'
+};
+
 const DEFAULT_HANDLER = (eventName) => () => {
   // Placeholder to make it obvious when a handler has not been provided yet.
   // eslint-disable-next-line no-console
   console.warn(`[socketHandlers] handler for "${eventName}" not implemented`);
 };
 
+const defaultIdGenerator = () => crypto.randomBytes(8).toString('hex');
+
 /**
  * Register Socket.IO event listeners.
  *
  * @param {import('socket.io').Server} io - Socket.IO server instance
- * @param {Object} [handlers] - Optional event handlers keyed by event name
+ * @param {ServerState} serverState - Shared in-memory server state
+ * @param {Object} [options]
+ * @param {Object} [options.overrides] - Optional custom handlers keyed by event name
+ * @param {Function} [options.idGenerator] - Optional deterministic player ID generator
  */
-function registerSocketHandlers(io, handlers = {}) {
+function registerSocketHandlers(io, serverState, options = {}) {
   if (!io || typeof io.on !== 'function') {
     throw new Error('Socket.IO server instance with an "on" method is required');
   }
 
+  if (!serverState || typeof serverState !== 'object') {
+    throw new Error('Server state reference is required to register handlers');
+  }
+
+  const {
+    overrides = {},
+    idGenerator = defaultIdGenerator
+  } = options;
+
+  const playerSocketMap = new Map();
+
+  const emitGameState = () => {
+    if (!serverState.game) {
+      return;
+    }
+    io.emit(OUTGOING_EVENTS.GAME_STATE, serverState.game);
+  };
+
+  const emitError = (socket, code, message) => {
+    socket.emit(OUTGOING_EVENTS.ERROR, { code, message });
+  };
+
+  const associateSocketWithPlayer = (socket, player) => {
+    if (!socket.data) {
+      socket.data = {};
+    }
+    socket.data.playerId = player.playerId;
+    socket.data.playerSecret = player.playerSecret;
+    socket.data.gameId = serverState.game ? serverState.game.gameId : null;
+    playerSocketMap.set(player.playerId, socket);
+  };
+
+  const generateUniquePlayerId = (game) => {
+    let attempts = 0;
+    let candidate;
+    do {
+      candidate = idGenerator();
+      attempts += 1;
+      if (attempts > 25) {
+        throw new Error('Unable to generate unique playerId');
+      }
+    } while (findPlayerById(game, candidate));
+    return candidate;
+  };
+
+  const handleJoinGame = (socket, payload) => {
+    const game = serverState.game;
+    if (!game) {
+      emitError(socket, 'NO_ACTIVE_GAME', 'No active game is available to join.');
+      return;
+    }
+
+    if (game.phase !== 'lobby') {
+      emitError(socket, 'INVALID_PHASE', 'Game is not accepting new players.');
+      return;
+    }
+
+    if (!payload || typeof payload.gameId !== 'string' || payload.gameId !== game.gameId) {
+      emitError(socket, 'INVALID_GAME', 'Game identifier does not match active game.');
+      return;
+    }
+
+    const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+    if (name.length === 0) {
+      emitError(socket, 'INVALID_NAME', 'Player name is required to join.');
+      return;
+    }
+
+    const playerId = generateUniquePlayerId(game);
+    const playerState = createPlayerState(playerId, name);
+
+    game.players.push(playerState);
+    game.turnOrder.push(playerId);
+
+    associateSocketWithPlayer(socket, playerState);
+
+    socket.emit(OUTGOING_EVENTS.JOIN_SUCCESS, {
+      playerId,
+      playerSecret: playerState.playerSecret
+    });
+
+    emitGameState();
+  };
+
+  const handleReconnectPlayer = (socket, payload) => {
+    const game = serverState.game;
+    if (!game) {
+      emitError(socket, 'NO_ACTIVE_GAME', 'No active game to reconnect to.');
+      return;
+    }
+
+    if (!payload || typeof payload.gameId !== 'string' || payload.gameId !== game.gameId) {
+      emitError(socket, 'INVALID_GAME', 'Game identifier does not match active game.');
+      return;
+    }
+
+    const { playerId, playerSecret } = payload;
+    if (typeof playerId !== 'string' || typeof playerSecret !== 'string') {
+      emitError(socket, 'INVALID_PAYLOAD', 'playerId and playerSecret are required.');
+      return;
+    }
+
+    const player = findPlayerById(game, playerId);
+    if (!player) {
+      emitError(socket, 'PLAYER_NOT_FOUND', 'Unable to find player for reconnection.');
+      return;
+    }
+
+    if (player.playerSecret !== playerSecret) {
+      emitError(socket, 'INVALID_SECRET', 'Player credentials did not match.');
+      return;
+    }
+
+    player.connected = true;
+    associateSocketWithPlayer(socket, player);
+
+    emitGameState();
+  };
+
+  const handleDisconnect = (socket, reason) => {
+    const playerId = socket && socket.data ? socket.data.playerId : null;
+    if (!playerId) {
+      return;
+    }
+
+    playerSocketMap.delete(playerId);
+
+    const game = serverState.game;
+    if (!game) {
+      return;
+    }
+
+    const player = findPlayerById(game, playerId);
+    if (!player) {
+      return;
+    }
+
+    if (!player.connected) {
+      return;
+    }
+
+    player.connected = false;
+    emitGameState();
+  };
+
+  const builtinHandlers = {
+    [INCOMING_EVENTS.JOIN_GAME]: handleJoinGame,
+    [INCOMING_EVENTS.RECONNECT_PLAYER]: handleReconnectPlayer,
+    [SOCKET_LIFECYCLE_EVENTS.DISCONNECT]: handleDisconnect
+  };
+
   const getHandler = (eventName) => {
-    const handler = handlers[eventName];
-    if (typeof handler === 'function') {
-      return handler;
+    if (typeof overrides[eventName] === 'function') {
+      return overrides[eventName];
+    }
+    if (builtinHandlers[eventName]) {
+      return builtinHandlers[eventName];
     }
     return DEFAULT_HANDLER(eventName);
   };
@@ -50,6 +216,10 @@ function registerSocketHandlers(io, handlers = {}) {
   io.on(SOCKET_LIFECYCLE_EVENTS.CONNECTION, (socket) => {
     if (!socket || typeof socket.on !== 'function') {
       return;
+    }
+
+    if (!socket.data) {
+      socket.data = {};
     }
 
     socket.on(INCOMING_EVENTS.RECONNECT_PLAYER, (payload) => {
@@ -93,5 +263,6 @@ function registerSocketHandlers(io, handlers = {}) {
 module.exports = {
   registerSocketHandlers,
   INCOMING_EVENTS,
-  SOCKET_LIFECYCLE_EVENTS
+  SOCKET_LIFECYCLE_EVENTS,
+  OUTGOING_EVENTS
 };
