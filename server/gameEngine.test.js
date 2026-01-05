@@ -9,6 +9,10 @@ const {
   lockAndRollRemaining,
   isHotDiceCondition,
   rollHotDice,
+  toggleDieSelection,
+  computeSelectionState,
+  clearDiceSelection,
+  setDiceSelection,
   startGame,
   advanceToNextTurn,
   initializeTurnState,
@@ -179,6 +183,136 @@ function runTests() {
   const uniqueValues = new Set(manyRolls);
   assert(uniqueValues.size > 1, 'Dice rolls produce varied results');
   assert(manyRolls.every(v => v >= 1 && v <= 6), 'All 100 rolls are valid');
+
+  // === Dice Selection Tests ===
+  console.log('\n--- Dice Selection Tests ---');
+
+  // Create a game with known dice values
+  const selectionGame = createNewGame();
+  const player = createPlayerState('p1', 'Alice');
+  let selResult = addPlayer(selectionGame, player);
+  selResult = startGame(selResult.gameState);
+  let gameWithTurn = selResult.gameState;
+
+  // Manually set dice to known values for testing
+  gameWithTurn = {
+    ...gameWithTurn,
+    turn: {
+      ...gameWithTurn.turn,
+      dice: [
+        { value: 1, selectable: true },
+        { value: 5, selectable: true },
+        { value: 2, selectable: true },
+        { value: 2, selectable: true },
+        { value: 2, selectable: true },
+        { value: 6, selectable: true }
+      ]
+    }
+  };
+
+  // Test toggling selection
+  const toggle1 = toggleDieSelection(gameWithTurn, 0); // Select die with value 1
+  assert(toggle1.success, 'Can toggle die selection');
+  assertEquals(toggle1.gameState.turn.selection.selectedIndices.length, 1, 'One die selected');
+  assert(toggle1.gameState.turn.selection.selectedIndices.includes(0), 'Correct die selected');
+  assertEquals(toggle1.gameState.turn.selection.selectionScore, 100, 'Single 1 scores 100');
+  assert(toggle1.gameState.turn.selection.isValid, 'Selection is valid');
+
+  // Toggle another die
+  const toggle2 = toggleDieSelection(toggle1.gameState, 1); // Select die with value 5
+  assert(toggle2.success, 'Can select second die');
+  assertEquals(toggle2.gameState.turn.selection.selectedIndices.length, 2, 'Two dice selected');
+  assertEquals(toggle2.gameState.turn.selection.selectionScore, 150, '1+5 scores 150');
+  assert(toggle2.gameState.turn.selection.isValid, 'Selection is valid');
+
+  // Toggle off first die
+  const toggle3 = toggleDieSelection(toggle2.gameState, 0); // Deselect die with value 1
+  assert(toggle3.success, 'Can deselect die');
+  assertEquals(toggle3.gameState.turn.selection.selectedIndices.length, 1, 'One die remains selected');
+  assertEquals(toggle3.gameState.turn.selection.selectionScore, 50, 'Single 5 scores 50');
+
+  // Select invalid combination
+  const toggle4 = toggleDieSelection(gameWithTurn, 2); // Select die with value 2 (invalid alone)
+  assert(toggle4.success, 'Toggle succeeds even for invalid selection');
+  assert(!toggle4.gameState.turn.selection.isValid, 'Selection is invalid (single 2)');
+  assertEquals(toggle4.gameState.turn.selection.selectionScore, 0, 'Invalid selection scores 0');
+
+  // Select three 2s (valid)
+  let threeTwo = toggleDieSelection(gameWithTurn, 2);
+  threeTwo = toggleDieSelection(threeTwo.gameState, 3);
+  threeTwo = toggleDieSelection(threeTwo.gameState, 4);
+  assert(threeTwo.gameState.turn.selection.isValid, 'Three 2s is valid');
+  assertEquals(threeTwo.gameState.turn.selection.selectionScore, 200, 'Three 2s score 200');
+
+  // Test toggling non-selectable die
+  const gameWithLocked = {
+    ...gameWithTurn,
+    turn: {
+      ...gameWithTurn.turn,
+      dice: [
+        { value: 1, selectable: false }, // Locked
+        { value: 5, selectable: true }
+      ]
+    }
+  };
+  const toggleLocked = toggleDieSelection(gameWithLocked, 0);
+  assert(!toggleLocked.success, 'Cannot select locked die');
+  assert(toggleLocked.error.includes('not selectable'), 'Error mentions die not selectable');
+
+  // Test invalid index
+  const toggleInvalid = toggleDieSelection(gameWithTurn, 99);
+  assert(!toggleInvalid.success, 'Cannot select invalid index');
+
+  // === computeSelectionState Tests ===
+  console.log('\n--- computeSelectionState Tests ---');
+
+  const testDice = [
+    { value: 1, selectable: true },
+    { value: 1, selectable: true },
+    { value: 1, selectable: true },
+    { value: 5, selectable: true },
+    { value: 5, selectable: true },
+    { value: 2, selectable: true }
+  ];
+
+  const emptySelection = computeSelectionState(testDice, []);
+  assertEquals(emptySelection.selectedIndices.length, 0, 'Empty selection has no indices');
+  assert(emptySelection.isValid, 'Empty selection is valid');
+  assertEquals(emptySelection.selectionScore, 0, 'Empty selection scores 0');
+
+  const threeOnes = computeSelectionState(testDice, [0, 1, 2]);
+  assert(threeOnes.isValid, 'Three 1s is valid');
+  assertEquals(threeOnes.selectionScore, 1000, 'Three 1s score 1000');
+
+  const mixed = computeSelectionState(testDice, [0, 1, 2, 3, 4]);
+  assert(mixed.isValid, 'Three 1s + two 5s is valid');
+  assertEquals(mixed.selectionScore, 1100, 'Three 1s + two 5s = 1100');
+
+  const invalidSelection = computeSelectionState(testDice, [5]);
+  assert(!invalidSelection.isValid, 'Single 2 is invalid');
+  assertEquals(invalidSelection.selectionScore, 0, 'Invalid selection scores 0');
+
+  // === clearDiceSelection Tests ===
+  console.log('\n--- clearDiceSelection Tests ---');
+
+  const clearResult = clearDiceSelection(toggle2.gameState);
+  assert(clearResult.success, 'Can clear selection');
+  assertEquals(clearResult.gameState.turn.selection.selectedIndices.length, 0, 'Selection cleared');
+  assertEquals(clearResult.gameState.turn.selection.selectionScore, 0, 'Score reset to 0');
+  assert(clearResult.gameState.turn.selection.isValid, 'Cleared selection is valid');
+
+  // === setDiceSelection Tests ===
+  console.log('\n--- setDiceSelection Tests ---');
+
+  const setResult = setDiceSelection(gameWithTurn, [0, 1, 2, 3, 4]);
+  assert(setResult.success, 'Can set selection programmatically');
+  assertEquals(setResult.gameState.turn.selection.selectedIndices.length, 5, 'Five dice selected');
+  
+  const setInvalid = setDiceSelection(gameWithTurn, [99]);
+  assert(!setInvalid.success, 'Cannot set invalid index');
+
+  const setLocked = setDiceSelection(gameWithLocked, [0]);
+  assert(!setLocked.success, 'Cannot set selection on locked die');
 
   // === Summary ===
   console.log('\n=== Test Summary ===');
