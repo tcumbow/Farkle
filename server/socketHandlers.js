@@ -789,6 +789,10 @@ function registerSocketHandlers(io, serverState, options = {}) {
       socket.data = {};
     }
 
+    if (serverState.game) {
+      socket.emit(OUTGOING_EVENTS.GAME_STATE, serverState.game);
+    }
+
     socket.on(INCOMING_EVENTS.RECONNECT_PLAYER, (payload) => {
       getHandler(INCOMING_EVENTS.RECONNECT_PLAYER)(socket, payload);
     });

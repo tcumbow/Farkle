@@ -108,6 +108,9 @@ function runTests() {
     const socket = createMockSocket();
     io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](socket);
 
+    const initialState = socket.emitted.find((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE);
+    assert(!!initialState, 'New connection receives current game state');
+
     const expectedEvents = [
       INCOMING_EVENTS.RECONNECT_PLAYER,
       INCOMING_EVENTS.JOIN_GAME,
