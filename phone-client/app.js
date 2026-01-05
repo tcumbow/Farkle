@@ -12,6 +12,16 @@
   const gameInfoEl = document.getElementById('game-info');
   const toastContainer = document.getElementById('toast-container');
   const toastTemplate = document.getElementById('message-template');
+  const turnCard = document.getElementById('turn-card');
+  const turnTitle = document.getElementById('turn-title');
+  const turnPhaseEl = document.getElementById('turn-phase');
+  const turnStatusLine = document.getElementById('turn-status-line');
+  const turnAccumulatedEl = document.getElementById('turn-accumulated');
+  const turnSelectionEl = document.getElementById('turn-selection');
+  const turnHintEl = document.getElementById('turn-hint');
+  const rollButton = document.getElementById('roll-button');
+  const bankButton = document.getElementById('bank-button');
+  const diceContainer = document.getElementById('dice-container');
 
   const params = new URLSearchParams(window.location.search);
   const gameId = params.get('gameId') || '';
@@ -21,6 +31,7 @@
   let latestGameState = null;
   let reconnectAttempted = false;
   let identityRecognized = false;
+  let currentIdentity = null;
 
   initialize();
 
@@ -32,28 +43,32 @@
     }
 
     nameInput.value = getStoredName();
-    const storedIdentity = loadIdentity();
+    const storedIdentity = readIdentityFromStorage();
+    currentIdentity = storedIdentity && storedIdentity.gameId === gameId ? storedIdentity : null;
 
     socket = io({ transports: ['websocket'] });
 
     socket.on('connect', () => {
       setStatus('info', 'Connected. Enter your name to join.');
-      if (!reconnectAttempted && storedIdentity && storedIdentity.gameId === gameId) {
+      if (!reconnectAttempted && currentIdentity) {
         reconnectAttempted = true;
-        emitReconnect(storedIdentity);
+        emitReconnect(currentIdentity);
       }
       updateJoinAvailability();
+      renderTurnState(latestGameState);
     });
 
     socket.on('disconnect', () => {
       setStatus('error', 'Disconnected. Retrying…');
       updateJoinAvailability();
+      renderTurnState(latestGameState);
     });
 
     socket.on('connect_error', error => {
       console.error('Socket connect error', error);
       setStatus('error', 'Unable to connect. Check network.');
       updateJoinAvailability();
+      renderTurnState(latestGameState);
     });
 
     socket.on('join_success', payload => {
@@ -76,19 +91,21 @@
       identityRecognized = true;
       pendingJoin = false;
       updateJoinAvailability();
+      renderTurnState(latestGameState);
     });
 
     socket.on('game_state', gameState => {
       latestGameState = gameState;
       renderGameInfo(gameState);
       updateJoinAvailability();
-      const identity = loadIdentity();
+      const identity = getIdentity();
       if (identity && (!gameState || !gameState.players || !gameState.players.some(p => p.playerId === identity.playerId))) {
         // Identity is stale relative to game; clear it so user can rejoin.
         clearIdentity();
         updateCredentials(null);
         setStatus('info', 'This game no longer recognizes your device. Join again.');
         identityRecognized = false;
+        updateJoinAvailability();
       } else if (identity) {
         updateCredentials(identity);
         if (!identityRecognized) {
@@ -98,6 +115,7 @@
       } else {
         identityRecognized = false;
       }
+      renderTurnState(gameState);
     });
 
     socket.on('error', payload => {
@@ -113,9 +131,19 @@
 
     formEl.addEventListener('submit', handleJoinSubmit);
     leaveButton.addEventListener('click', handleLeave);
+    if (diceContainer) {
+      diceContainer.addEventListener('click', handleDiceClick);
+    }
+    if (rollButton) {
+      rollButton.addEventListener('click', handleRoll);
+    }
+    if (bankButton) {
+      bankButton.addEventListener('click', handleBank);
+    }
 
-    updateCredentials(storedIdentity && storedIdentity.gameId === gameId ? storedIdentity : null);
+    updateCredentials(currentIdentity);
     renderGameInfo(null);
+    renderTurnState(null);
     updateJoinAvailability();
   }
 
@@ -154,6 +182,7 @@
     setStatus('info', 'Identity cleared. You can join again.');
     identityRecognized = false;
     updateJoinAvailability();
+    renderTurnState(latestGameState);
   }
 
   function emitReconnect(identity) {
@@ -172,12 +201,12 @@
 
   function updateJoinAvailability() {
     const connected = socket && socket.connected;
-    const identity = loadIdentity();
+    const identity = getIdentity();
     const inLobby = !latestGameState || latestGameState.phase === 'lobby';
-    const canAttemptJoin = connected && !pendingJoin && (!identity || identity.gameId !== gameId) && inLobby;
+    const canAttemptJoin = connected && !pendingJoin && !identity && inLobby;
     joinButton.disabled = !canAttemptJoin;
-    nameInput.disabled = !connected || Boolean(identity && identity.gameId === gameId) || !inLobby;
-    leaveButton.disabled = !(identity && identity.gameId === gameId);
+    nameInput.disabled = !connected || Boolean(identity) || !inLobby;
+    leaveButton.disabled = !identity;
   }
 
   function renderGameInfo(gameState) {
@@ -193,6 +222,297 @@
       text += ' (joining closed)';
     }
     gameInfoEl.textContent = text;
+  }
+
+  function renderTurnState(gameState) {
+    const identity = getIdentity();
+    if (!identity) {
+      hideElement(turnCard);
+      clearDice();
+      disableActionButtons();
+      turnHintEl.textContent = 'Join the game to begin playing.';
+      return;
+    }
+
+    showElement(turnCard);
+
+    const phase = gameState && gameState.phase ? gameState.phase : null;
+    turnPhaseEl.textContent = phase ? phase.toUpperCase() : '—';
+
+    if (!gameState) {
+      turnTitle.textContent = `Welcome, ${identity.name || 'Player'}`;
+      turnStatusLine.textContent = 'Waiting for game to begin.';
+      turnAccumulatedEl.textContent = 'Turn score: 0';
+      turnSelectionEl.textContent = 'Selection: 0';
+      clearDice();
+      disableActionButtons();
+      turnHintEl.textContent = 'Awaiting game creation on the TV.';
+      return;
+    }
+
+    const players = Array.isArray(gameState.players) ? gameState.players : [];
+    const playerState = players.find(p => p.playerId === identity.playerId);
+
+    if (!playerState) {
+      turnTitle.textContent = identity.name || 'Player';
+      turnStatusLine.textContent = 'You are not part of this game.';
+      turnAccumulatedEl.textContent = 'Turn score: 0';
+      turnSelectionEl.textContent = 'Selection: 0';
+      clearDice();
+      disableActionButtons();
+      turnHintEl.textContent = 'Leave the device or join again with the QR code.';
+      return;
+    }
+
+    if (gameState.phase !== 'in_progress' || !gameState.turn) {
+      turnTitle.textContent = `Hello, ${playerState.name}`;
+      turnStatusLine.textContent = gameState.phase === 'lobby'
+        ? 'Waiting for the game to start.'
+        : 'Game is finished.';
+      turnAccumulatedEl.textContent = 'Turn score: 0';
+      turnSelectionEl.textContent = 'Selection: 0';
+      clearDice();
+      disableActionButtons();
+      turnHintEl.textContent = gameState.phase === 'lobby'
+        ? 'Hang tight until the TV starts the game.'
+        : 'Start a new game from the TV when ready.';
+      return;
+    }
+
+    const turn = gameState.turn;
+    const selection = turn.selection || { selectedIndices: [], isValid: false, selectionScore: 0 };
+    const selectedIndices = Array.isArray(selection.selectedIndices) ? selection.selectedIndices : [];
+    const isActivePlayer = turn.playerId === identity.playerId;
+    const activePlayer = players.find(p => p.playerId === turn.playerId);
+    const activeName = activePlayer ? activePlayer.name : 'Unknown player';
+
+    turnAccumulatedEl.textContent = `Turn score: ${turn.accumulatedTurnScore}`;
+    turnSelectionEl.textContent = `Selection: ${selection.selectionScore} ${selection.isValid ? '(valid)' : '(invalid)'}`;
+
+    renderDice(turn.dice || [], selectedIndices, isActivePlayer);
+
+    if (!isActivePlayer) {
+      turnTitle.textContent = `${playerState.name}, hold tight`;
+      turnStatusLine.textContent = `${activeName} is taking their turn.`;
+      disableActionButtons();
+      turnHintEl.textContent = 'Controls will unlock when your turn begins.';
+      return;
+    }
+
+    turnTitle.textContent = `Your turn, ${playerState.name}!`;
+    turnStatusLine.textContent = `Status: ${formatTurnStatus(turn.status)}`;
+
+    const rollEnabled = canRoll();
+    const bankEnabled = canBank();
+
+    rollButton.disabled = !rollEnabled;
+    bankButton.disabled = !bankEnabled;
+
+    turnHintEl.textContent = determineHint(turn.status, selection, turn);
+
+    if (!bankEnabled && !rollEnabled) {
+      disableActionButtons();
+    }
+  }
+
+  function handleDiceClick(event) {
+    const target = event.target.closest('.die');
+    if (!target) {
+      return;
+    }
+
+    const index = Number.parseInt(target.dataset.index, 10);
+    if (Number.isNaN(index)) {
+      return;
+    }
+
+    attemptToggleDie(index);
+  }
+
+  function attemptToggleDie(index) {
+    if (!socket || !socket.connected) {
+      return;
+    }
+
+    const identity = getIdentity();
+    if (!identity || !latestGameState || latestGameState.phase !== 'in_progress') {
+      return;
+    }
+
+    const turn = latestGameState.turn;
+    if (!turn || turn.playerId !== identity.playerId) {
+      return;
+    }
+
+    const die = Array.isArray(turn.dice) ? turn.dice[index] : null;
+    if (!die || !die.selectable) {
+      return;
+    }
+
+    socket.emit('toggle_die_selection', { dieIndex: index });
+  }
+
+  function handleRoll() {
+    if (!canRoll()) {
+      return;
+    }
+
+    socket.emit('roll_dice', {});
+  }
+
+  function handleBank() {
+    if (!canBank()) {
+      return;
+    }
+
+    socket.emit('bank_score', {});
+  }
+
+  function canRoll() {
+    const identity = getIdentity();
+    if (!socket || !socket.connected || !identity || !latestGameState) {
+      return false;
+    }
+
+    if (latestGameState.phase !== 'in_progress') {
+      return false;
+    }
+
+    const turn = latestGameState.turn;
+    if (!turn || turn.playerId !== identity.playerId) {
+      return false;
+    }
+
+    const selection = turn.selection || { isValid: false, selectedIndices: [] };
+    if (!selection.isValid) {
+      return false;
+    }
+
+    if (turn.status && turn.status !== 'awaiting_roll' && turn.status !== 'awaiting_bank') {
+      return false;
+    }
+
+    return true;
+  }
+
+  function canBank() {
+    const identity = getIdentity();
+    if (!socket || !socket.connected || !identity || !latestGameState) {
+      return false;
+    }
+
+    if (latestGameState.phase !== 'in_progress') {
+      return false;
+    }
+
+    const turn = latestGameState.turn;
+    if (!turn || turn.playerId !== identity.playerId) {
+      return false;
+    }
+
+    const selection = turn.selection || { isValid: false, selectedIndices: [], selectionScore: 0 };
+    const hasSelection = Array.isArray(selection.selectedIndices) && selection.selectedIndices.length > 0;
+
+    if (selection.isValid) {
+      return true;
+    }
+
+    if (!hasSelection && turn.accumulatedTurnScore > 0) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function renderDice(dice, selectedIndices, allowInteraction) {
+    clearDice();
+
+    if (!Array.isArray(dice) || dice.length === 0) {
+      return;
+    }
+
+    const selectedSet = new Set(selectedIndices);
+
+    dice.forEach((die, index) => {
+      const dieEl = document.createElement('div');
+      dieEl.classList.add('die');
+      dieEl.dataset.index = String(index);
+
+      if (!die.selectable) {
+        dieEl.classList.add('locked');
+      } else if (allowInteraction) {
+        dieEl.classList.add('selectable');
+      }
+
+      if (selectedSet.has(index)) {
+        dieEl.classList.add('selected');
+      }
+
+      dieEl.textContent = String(die.value);
+      diceContainer.appendChild(dieEl);
+    });
+  }
+
+  function determineHint(status, selection, turn) {
+    const hasSelection = Array.isArray(selection.selectedIndices) && selection.selectedIndices.length > 0;
+    if (!status) {
+      return 'Waiting for the latest turn data.';
+    }
+
+    const hotDice = Boolean(turn && Array.isArray(turn.dice) && turn.dice.length === 6 && turn.accumulatedTurnScore > 0);
+
+    switch (status) {
+      case 'awaiting_selection':
+        if (hasSelection && !selection.isValid) {
+          return 'Current selection is not valid yet.';
+        }
+        if (hotDice) {
+          return 'Hot dice! Pick a scoring set to keep going.';
+        }
+        return 'Select scoring dice to continue.';
+      case 'awaiting_roll':
+        return selection.isValid ? 'Roll remaining dice or bank your points.' : 'Adjust dice until the selection is valid.';
+      case 'awaiting_bank':
+        return 'You may bank now or keep rolling.';
+      default:
+        return 'Waiting for the next update.';
+    }
+  }
+
+  function formatTurnStatus(status) {
+    switch (status) {
+      case 'awaiting_selection':
+        return 'Awaiting Selection';
+      case 'awaiting_roll':
+        return 'Awaiting Roll';
+      case 'awaiting_bank':
+        return 'Awaiting Bank';
+      default:
+        return 'Unknown';
+    }
+  }
+
+  function clearDice() {
+    if (diceContainer) {
+      diceContainer.innerHTML = '';
+    }
+  }
+
+  function disableActionButtons() {
+    rollButton.disabled = true;
+    bankButton.disabled = true;
+  }
+
+  function showElement(element) {
+    if (element) {
+      element.classList.remove('hidden');
+    }
+  }
+
+  function hideElement(element) {
+    if (element) {
+      element.classList.add('hidden');
+    }
   }
 
   function setStatus(level, message) {
@@ -227,9 +547,10 @@
     } catch (error) {
       console.warn('Unable to save identity', error);
     }
+    currentIdentity = identity;
   }
 
-  function loadIdentity() {
+  function readIdentityFromStorage() {
     try {
       const raw = localStorage.getItem(storageKey);
       if (!raw) {
@@ -246,12 +567,18 @@
     }
   }
 
+  function getIdentity() {
+    return currentIdentity;
+  }
+
   function clearIdentity() {
     try {
       localStorage.removeItem(storageKey);
     } catch (error) {
       console.warn('Unable to clear identity', error);
     }
+    currentIdentity = null;
+    identityRecognized = false;
   }
 
   function storeName(name) {

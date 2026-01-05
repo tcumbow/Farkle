@@ -27,6 +27,30 @@
         <button id="leave-button" type="button">Leave Device</button>
       </div>
     </section>
+
+    <section id="turn-card" class="card hidden">
+      <header class="turn-header">
+        <h2 id="turn-title">Waiting</h2>
+        <p id="turn-phase">—</p>
+      </header>
+
+      <div class="turn-info">
+        <p id="turn-status-line">Turn status unavailable.</p>
+        <p id="turn-accumulated">Turn score: 0</p>
+        <p id="turn-selection">Selection: 0</p>
+      </div>
+
+      <div class="dice-wrapper">
+        <div id="dice-container" class="dice-grid"></div>
+      </div>
+
+      <div class="actions">
+        <button id="roll-button" type="button" disabled>Roll Dice</button>
+        <button id="bank-button" type="button" disabled>Bank Score</button>
+      </div>
+
+      <p id="turn-hint" class="hint">Awaiting game data…</p>
+    </section>
   </main>
 
   <template id="message-template">
