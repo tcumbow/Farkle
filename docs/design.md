@@ -1,0 +1,268 @@
+# Multiplayer Farkle – Initial Design Specification
+
+## 1. Project Overview
+
+A local-network, single-game, multiplayer digital version of **Farkle**.
+
+- One authoritative Node.js server
+- One TV client (read-only after game start)
+- Multiple phone clients (one per player)
+- All players are physically co-located on the same WiFi network
+- No persistence to disk; all state lives in memory
+- Only one game can exist at a time
+
+This is a personal project optimized for simplicity, debuggability, and fidelity to the analog Farkle experience.
+
+---
+
+## 2. Core Constraints & Assumptions
+
+- Server has a static IP address and known port
+- No hostile clients or attackers are assumed
+- Server restart wipes all state
+- Phone clients may disconnect/reconnect arbitrarily
+- TV client may be refreshed and must rehydrate state
+- No concurrent games
+
+---
+
+## 3. Technology Stack
+
+### Server
+- Node.js
+- Express (or Fastify) for HTTP
+- Socket.IO for WebSocket communication
+- `crypto.randomInt()` for dice rolls
+
+### Clients
+- TV client: full-screen HTML/CSS/JS (Edge Chromium)
+- Phone client: mobile-friendly HTML/CSS/JS
+
+---
+
+## 4. Client Roles
+
+### TV Client
+
+- Displays:
+  - Lobby state (joined players)
+  - Game state (scores, turns, dice, selections)
+  - Final results
+- Displays QR code for joining during lobby
+- Contains the **Start New Game** button
+- After game start, performs no gameplay actions
+- Shows private player state (dice selections) in real time
+
+### Phone Client
+
+- One phone == one player
+- Responsibilities:
+  - Join game
+  - Choose player name (stored in localStorage)
+  - Toggle dice selection
+  - Choose roll or bank when allowed
+- Must tolerate refresh, app-switching, and reconnection
+
+---
+
+## 5. Game Rules (Classic Farkle)
+
+- 6 dice
+- Standard scoring rules
+- Minimum entry score:
+  - Default: 500
+  - Adjustable on TV client before game start
+- Hot dice:
+  - Dice pool resets to 6
+  - Accumulated turn score preserved
+  - Player may choose to roll again or bank
+
+---
+
+## 6. Game Phases
+
+```text
+idle → lobby → in_progress → finished
+```
+
+### idle
+- No active game
+- TV client displays last completed game (if any)
+- **Start New Game** available
+
+### lobby
+- QR code displayed
+- Players may join
+- TV client can start game
+
+### in_progress
+- Turn-based play
+- Only active player may act
+- Server enforces all legality rules
+
+### finished
+- Final scores displayed
+- No further player actions accepted
+- Only **Start New Game** allowed
+
+---
+
+## 7. Identity & Reconnection
+
+### Player Identity
+
+Each player is assigned:
+- `playerId` (opaque, server-generated)
+- `playerSecret` (for reconnection)
+
+Stored in phone client `localStorage`.
+
+### Reconnection Flow
+
+- Client reconnects via WebSocket
+- Sends `{ gameId, playerId, playerSecret }`
+- Server reattaches if valid
+- Active turn waits indefinitely for reconnection
+
+---
+
+## 8. Server Authority & Validation
+
+- Server is fully authoritative
+- Clients attempt to prevent illegal actions
+- Server rejects illegal actions and logs warnings
+- Illegal actions indicate developer bugs, not malicious behavior
+
+Examples of illegal actions:
+- Non-active player sending roll/bank
+- Rolling with invalid dice selection
+- Actions sent in wrong game phase
+
+---
+
+## 9. Dice Selection Model
+
+- Dice may be freely toggled by the active player
+- Selection updates are broadcast in real time
+- Server continuously re-validates selection
+- Roll/Bank buttons are disabled unless selection is valid
+- Selection is only committed when Roll or Bank is invoked
+
+Invalid selections:
+- Allowed visually
+- Prevent roll/bank
+- Score computed live and shown
+
+---
+
+## 10. Turn Model
+
+Each turn tracks:
+- Active player ID
+- Current dice values
+- Dice selection state
+- Accumulated turn score
+
+Hot dice automatically reset dice pool.
+
+---
+
+## 11. Join Flow
+
+1. TV client requests new game
+2. Server creates `gameId`
+3. TV displays QR code:
+   ```
+   http://SERVER_IP/join?gameId=XYZ
+   ```
+4. Phone client loads join page
+5. Player enters name
+6. Server assigns `playerId` and `playerSecret`
+7. Phone stores identity in localStorage
+
+If game starts mid-join, half-joined players are dropped.
+
+---
+
+## 12. Player Ordering
+
+- Player order is randomized at game start
+- Join order is not preserved
+
+---
+
+## 13. End of Game
+
+- Final scores displayed on TV
+- Server rejects all phone actions
+- Phone clients may be disconnected
+- Only **Start New Game** is available
+
+New game always starts from scratch; all players must rejoin.
+
+---
+
+## 14. Reset / Start New Game
+
+- "Reset" and "Start New Game" are the same concept
+- Triggered only from TV client
+- Clears all server state
+- Generates new `gameId`
+- Invalidates all existing player identities
+
+---
+
+## 15. Timeouts & Lifetime
+
+- No idle timeouts
+- Server runs indefinitely
+- State is cleared only via **Start New Game** or server restart
+
+---
+
+## 16. WebSocket vs REST Usage
+
+### REST
+- Serve static assets
+- Create game
+- Join game
+
+### WebSockets (Socket.IO)
+- State synchronization
+- Player actions
+- Reconnection handling
+
+---
+
+## 17. Debugging & Instrumentation
+
+- Optional in-memory event log behind a feature flag
+- Logs:
+  - Dice rolls
+  - State transitions
+  - Scoring events
+  - Illegal action attempts
+
+Used for debugging and rule verification.
+
+---
+
+## 18. Non-Goals
+
+- Persistence across server restarts
+- Multiple concurrent games
+- Spectators or read-only phone clients
+- Authentication or security beyond local trust
+
+---
+
+## 19. Implementation Priority Order
+
+1. Server state model & game engine
+2. Dice scoring logic + tests
+3. WebSocket message schema
+4. TV client (lobby + display)
+5. Phone client (join + actions)
+6. Reconnection logic
+7. Debug logging
+
