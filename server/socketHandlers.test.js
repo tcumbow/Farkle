@@ -50,8 +50,8 @@ function createMockSocket() {
   };
 }
 
-function createServerStateWithGame() {
-  const serverState = initializeServerState(false);
+function createServerStateWithGame(eventLogEnabled = false) {
+  const serverState = initializeServerState(eventLogEnabled);
   serverState.game = createNewGame();
   serverState.game.gameId = 'game-test';
   return serverState;
@@ -251,6 +251,39 @@ function runTests() {
     const broadcastCountAfterStart = io.emitted.filter((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).length;
     assert(broadcastCountAfterStart === broadcastCountBeforeStart + 1, 'Broadcast game_state after successful start');
     assert(!tvSocket.emitted.some((evt) => evt.event === OUTGOING_EVENTS.ERROR), 'No error emitted during successful start');
+    assert(serverState.eventLog.length === 0, 'No event log entries recorded when logging disabled');
+  }
+
+  // Event logging when enabled
+  {
+    const serverState = createServerStateWithGame(true);
+    const io = createMockIo();
+    const idSequence = ['player-log'];
+    registerSocketHandlers(io, serverState, {
+      idGenerator: () => idSequence.shift(),
+      shuffleTurnOrder: (order) => order.slice()
+    });
+
+    const phoneSocket = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](phoneSocket);
+    phoneSocket.handlers[INCOMING_EVENTS.JOIN_GAME]({ gameId: 'game-test', name: 'Loggy' });
+
+    const tvSocket = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](tvSocket);
+
+    tvSocket.handlers[INCOMING_EVENTS.START_GAME]({});
+
+    const stateEvent = serverState.eventLog.find((entry) => entry.type === 'STATE_TRANSITION');
+    assert(!!stateEvent, 'Logs state transition on start_game when enabled');
+    assert(stateEvent.payload.to === 'in_progress', 'State transition payload captures target phase');
+
+    const diceEvent = serverState.eventLog.find((entry) => entry.type === 'DICE_ROLL');
+    assert(!!diceEvent, 'Logs dice roll event for new turn');
+    assert(Array.isArray(diceEvent.payload.diceValues), 'Dice roll payload includes values array');
+
+    const scoringEvent = serverState.eventLog.find((entry) => entry.type === 'SCORING');
+    assert(!!scoringEvent, 'Logs scoring snapshot for active player');
+    assert(scoringEvent.payload.playerId === serverState.game.turn.playerId, 'Scoring event references active player');
   }
 
   // Start game failure scenarios
@@ -275,6 +308,21 @@ function runTests() {
     assert(!!phaseError, 'start_game emits error when phase invalid');
     assert(phaseError.payload.code === 'INVALID_PHASE', 'start_game invalid phase error code reported');
     assert(io.emitted.filter((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).length === 0, 'No broadcast when phase invalid');
+  }
+
+  // Illegal action logging when enabled
+  {
+    const serverState = createServerStateWithGame(true);
+    const io = createMockIo();
+    registerSocketHandlers(io, serverState);
+    const tvSocket = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](tvSocket);
+
+    tvSocket.handlers[INCOMING_EVENTS.START_GAME]({});
+
+    const illegalEvent = serverState.eventLog.find((entry) => entry.type === 'ILLEGAL_ACTION');
+    assert(!!illegalEvent, 'Records illegal action when start_game invalid');
+    assert(illegalEvent.payload.code === 'NO_PLAYERS', 'Illegal action payload captures error code');
   }
 
   // Reset game

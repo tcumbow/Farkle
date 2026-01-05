@@ -6,7 +6,7 @@
  */
 
 const crypto = require('crypto');
-const { createPlayerState, findPlayerById, createNewGame } = require('./state');
+const { createPlayerState, findPlayerById, createNewGame, logEvent } = require('./state');
 const { startGame: engineStartGame } = require('./gameEngine');
 
 const INCOMING_EVENTS = {
@@ -48,6 +48,13 @@ const defaultShuffle = (items) => {
   return result;
 };
 
+const EVENT_TYPES = {
+  STATE_TRANSITION: 'STATE_TRANSITION',
+  DICE_ROLL: 'DICE_ROLL',
+  SCORING: 'SCORING',
+  ILLEGAL_ACTION: 'ILLEGAL_ACTION'
+};
+
 /**
  * Register Socket.IO event listeners.
  *
@@ -74,6 +81,46 @@ function registerSocketHandlers(io, serverState, options = {}) {
 
   const playerSocketMap = new Map();
 
+  const recordEvent = (type, payload = {}) => {
+    const entryPayload = { ...payload };
+    if (entryPayload.gameId === undefined && serverState.game) {
+      entryPayload.gameId = serverState.game.gameId;
+    }
+    logEvent(serverState, type, entryPayload);
+  };
+
+  const recordIllegalAction = (socket, code, message, context = {}) => {
+    const payload = {
+      code,
+      message,
+      event: context.event || null,
+      playerId:
+        context.playerId !== undefined
+          ? context.playerId
+          : (socket && socket.data ? socket.data.playerId : null),
+      phase: serverState.game ? serverState.game.phase : null,
+      ...context
+    };
+
+    recordEvent(EVENT_TYPES.ILLEGAL_ACTION, payload);
+  };
+
+  const recordStateTransition = (fromPhase, toPhase, context = {}) => {
+    recordEvent(EVENT_TYPES.STATE_TRANSITION, {
+      from: fromPhase !== undefined ? fromPhase : null,
+      to: toPhase !== undefined ? toPhase : null,
+      ...context
+    });
+  };
+
+  const recordDiceRoll = (context = {}) => {
+    recordEvent(EVENT_TYPES.DICE_ROLL, context);
+  };
+
+  const recordScoring = (context = {}) => {
+    recordEvent(EVENT_TYPES.SCORING, context);
+  };
+
   const emitGameState = () => {
     if (!serverState.game) {
       return;
@@ -81,7 +128,8 @@ function registerSocketHandlers(io, serverState, options = {}) {
     io.emit(OUTGOING_EVENTS.GAME_STATE, serverState.game);
   };
 
-  const emitError = (socket, code, message) => {
+  const emitError = (socket, code, message, context = {}) => {
+    recordIllegalAction(socket, code, message, context);
     socket.emit(OUTGOING_EVENTS.ERROR, { code, message });
   };
 
@@ -120,23 +168,33 @@ function registerSocketHandlers(io, serverState, options = {}) {
   const handleJoinGame = (socket, payload) => {
     const game = serverState.game;
     if (!game) {
-      emitError(socket, 'NO_ACTIVE_GAME', 'No active game is available to join.');
+      emitError(socket, 'NO_ACTIVE_GAME', 'No active game is available to join.', {
+        event: INCOMING_EVENTS.JOIN_GAME
+      });
       return;
     }
 
     if (game.phase !== 'lobby') {
-      emitError(socket, 'INVALID_PHASE', 'Game is not accepting new players.');
+      emitError(socket, 'INVALID_PHASE', 'Game is not accepting new players.', {
+        event: INCOMING_EVENTS.JOIN_GAME,
+        phase: game.phase
+      });
       return;
     }
 
     if (!payload || typeof payload.gameId !== 'string' || payload.gameId !== game.gameId) {
-      emitError(socket, 'INVALID_GAME', 'Game identifier does not match active game.');
+      emitError(socket, 'INVALID_GAME', 'Game identifier does not match active game.', {
+        event: INCOMING_EVENTS.JOIN_GAME,
+        providedGameId: payload ? payload.gameId : null
+      });
       return;
     }
 
     const name = typeof payload.name === 'string' ? payload.name.trim() : '';
     if (name.length === 0) {
-      emitError(socket, 'INVALID_NAME', 'Player name is required to join.');
+      emitError(socket, 'INVALID_NAME', 'Player name is required to join.', {
+        event: INCOMING_EVENTS.JOIN_GAME
+      });
       return;
     }
 
@@ -159,29 +217,42 @@ function registerSocketHandlers(io, serverState, options = {}) {
   const handleReconnectPlayer = (socket, payload) => {
     const game = serverState.game;
     if (!game) {
-      emitError(socket, 'NO_ACTIVE_GAME', 'No active game to reconnect to.');
+      emitError(socket, 'NO_ACTIVE_GAME', 'No active game to reconnect to.', {
+        event: INCOMING_EVENTS.RECONNECT_PLAYER
+      });
       return;
     }
 
     if (!payload || typeof payload.gameId !== 'string' || payload.gameId !== game.gameId) {
-      emitError(socket, 'INVALID_GAME', 'Game identifier does not match active game.');
+      emitError(socket, 'INVALID_GAME', 'Game identifier does not match active game.', {
+        event: INCOMING_EVENTS.RECONNECT_PLAYER,
+        providedGameId: payload ? payload.gameId : null
+      });
       return;
     }
 
     const { playerId, playerSecret } = payload;
     if (typeof playerId !== 'string' || typeof playerSecret !== 'string') {
-      emitError(socket, 'INVALID_PAYLOAD', 'playerId and playerSecret are required.');
+      emitError(socket, 'INVALID_PAYLOAD', 'playerId and playerSecret are required.', {
+        event: INCOMING_EVENTS.RECONNECT_PLAYER
+      });
       return;
     }
 
     const player = findPlayerById(game, playerId);
     if (!player) {
-      emitError(socket, 'PLAYER_NOT_FOUND', 'Unable to find player for reconnection.');
+      emitError(socket, 'PLAYER_NOT_FOUND', 'Unable to find player for reconnection.', {
+        event: INCOMING_EVENTS.RECONNECT_PLAYER,
+        playerId
+      });
       return;
     }
 
     if (player.playerSecret !== playerSecret) {
-      emitError(socket, 'INVALID_SECRET', 'Player credentials did not match.');
+      emitError(socket, 'INVALID_SECRET', 'Player credentials did not match.', {
+        event: INCOMING_EVENTS.RECONNECT_PLAYER,
+        playerId
+      });
       return;
     }
 
@@ -254,19 +325,28 @@ function registerSocketHandlers(io, serverState, options = {}) {
   const handleStartGame = (socket) => {
     const game = serverState.game;
     if (!game) {
-      emitError(socket, 'NO_ACTIVE_GAME', 'No active game exists.');
+      emitError(socket, 'NO_ACTIVE_GAME', 'No active game exists.', {
+        event: INCOMING_EVENTS.START_GAME
+      });
       return;
     }
 
     if (game.phase !== 'lobby') {
-      emitError(socket, 'INVALID_PHASE', 'Game has already started.');
+      emitError(socket, 'INVALID_PHASE', 'Game has already started.', {
+        event: INCOMING_EVENTS.START_GAME,
+        phase: game.phase
+      });
       return;
     }
+
+    const previousPhase = game.phase;
 
     pruneUnreadyPlayers(game);
 
     if (game.players.length === 0) {
-      emitError(socket, 'NO_PLAYERS', 'Cannot start game without players.');
+      emitError(socket, 'NO_PLAYERS', 'Cannot start game without players.', {
+        event: INCOMING_EVENTS.START_GAME
+      });
       return;
     }
 
@@ -274,11 +354,42 @@ function registerSocketHandlers(io, serverState, options = {}) {
 
     const result = engineStartGame(game);
     if (!result.success || !result.gameState) {
-      emitError(socket, 'START_FAILED', result.error || 'Unable to start game.');
+      emitError(socket, 'START_FAILED', result.error || 'Unable to start game.', {
+        event: INCOMING_EVENTS.START_GAME
+      });
       return;
     }
 
     serverState.game = result.gameState;
+    const newGameState = result.gameState;
+    recordStateTransition(previousPhase, newGameState.phase, {
+      event: INCOMING_EVENTS.START_GAME,
+      playerCount: newGameState.players.length
+    });
+
+    if (newGameState.turn) {
+      const { turn } = newGameState;
+      const diceValues = Array.isArray(turn.dice) ? turn.dice.map((die) => die.value) : [];
+      const selectable = Array.isArray(turn.dice) ? turn.dice.map((die) => die.selectable) : [];
+      recordDiceRoll({
+        event: INCOMING_EVENTS.START_GAME,
+        playerId: turn.playerId,
+        diceValues,
+        selectable,
+        accumulatedTurnScore: turn.accumulatedTurnScore,
+        stage: 'turn_start'
+      });
+
+      const activePlayer = newGameState.players.find((p) => p.playerId === turn.playerId);
+      recordScoring({
+        event: INCOMING_EVENTS.START_GAME,
+        playerId: turn.playerId,
+        totalScore: activePlayer ? activePlayer.totalScore : 0,
+        accumulatedTurnScore: turn.accumulatedTurnScore,
+        selectionScore: turn.selection ? turn.selection.selectionScore : 0,
+        stage: 'turn_start'
+      });
+    }
     emitGameState();
   };
 
