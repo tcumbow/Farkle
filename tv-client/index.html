@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Farkle TV</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div>
+        <h1>Farkle TV</h1>
+        <p id="connection-status" class="status status-disconnected">Connecting…</p>
+      </div>
+      <div class="controls">
+        <button id="start-game-btn" disabled>Start Game</button>
+        <button id="reset-game-btn">Reset Game</button>
+      </div>
+    </header>
+
+    <section id="game-metadata" class="panel">
+      <h2>Game Info</h2>
+      <dl class="metadata">
+        <div>
+          <dt>Game ID</dt>
+          <dd id="game-id">—</dd>
+        </div>
+        <div>
+          <dt>Phase</dt>
+          <dd id="game-phase">—</dd>
+        </div>
+        <div>
+          <dt>Minimum Entry</dt>
+          <dd id="minimum-entry">—</dd>
+        </div>
+        <div>
+          <dt>Players</dt>
+          <dd id="player-count">0</dd>
+        </div>
+      </dl>
+      <div id="qr-section" class="qr-section hidden">
+        <canvas id="join-qr" width="200" height="200"></canvas>
+        <p id="join-url" class="join-url">—</p>
+      </div>
+    </section>
+
+    <section id="lobby-view" class="panel hidden">
+      <h2>Lobby</h2>
+      <ul id="lobby-players" class="list"></ul>
+      <p class="hint">Share the QR code to join. Start when ready.</p>
+    </section>
+
+    <section id="in-progress-view" class="panel hidden">
+      <h2>Current Turn</h2>
+      <div id="turn-summary" class="turn-summary">
+        <p id="active-player" class="active-player">—</p>
+        <p id="turn-status">—</p>
+        <p id="turn-score">—</p>
+        <p id="selection-score">—</p>
+      </div>
+      <div id="dice-container" class="dice-container"></div>
+    </section>
+
+    <section id="scoreboard" class="panel hidden">
+      <h2>Scoreboard</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Player</th>
+            <th>Score</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="scoreboard-body"></tbody>
+      </table>
+    </section>
+
+    <section id="finished-view" class="panel hidden">
+      <h2>Final Results</h2>
+      <ol id="final-results"></ol>
+    </section>
+
+    <section id="empty-state" class="panel">
+      <h2>No Active Game</h2>
+      <p>Press Reset to create a new lobby.</p>
+    </section>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js" integrity="sha384-tHM7bQ8kGULrrfE0HUpYjQCBuKeQ44W/vIvFFdNpWFmkGGVEbbE0F4sc8leUexiE" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js" integrity="sha512-jZX54WvP5LXAfe0GcCkU+OsQTopYX0whnVjMyaKSGEQxTNXva3/21KVcV4bkUP5APz5o7zu3nM6LFHcY4dZ+0A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="app.js"></script>
+</body>
+</html>
