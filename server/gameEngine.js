@@ -90,156 +90,26 @@ function rollHotDice() {
   return rollDice(6, true);
 }
 
-// ============================================================================
-// Dice Selection Functions
-// ============================================================================
-
 /**
- * Toggle a die selection in the current turn.
- * Updates the selection state and validates/scores the new selection.
- * 
- * @param {GameState} gameState - Current game state
- * @param {number} dieIndex - Index of die to toggle in the dice array
- * @returns {{success: boolean, gameState?: GameState, error?: string}}
- */
-function toggleDieSelection(gameState, dieIndex) {
-  if (!gameState || !gameState.turn) {
-    return { success: false, error: 'No active turn' };
-  }
-
-  const turn = gameState.turn;
-
-  // Validate die index
-  if (dieIndex < 0 || dieIndex >= turn.dice.length) {
-    return { success: false, error: 'Invalid die index' };
-  }
-
-  // Check if die is selectable
-  if (!turn.dice[dieIndex].selectable) {
-    return { success: false, error: 'Die is not selectable' };
-  }
-
-  // Toggle the selection
-  const currentSelection = turn.selection.selectedIndices;
-  let newSelectedIndices;
-
-  if (currentSelection.includes(dieIndex)) {
-    // Remove from selection
-    newSelectedIndices = currentSelection.filter(i => i !== dieIndex);
-  } else {
-    // Add to selection
-    newSelectedIndices = [...currentSelection, dieIndex];
-  }
-
-  // Compute new selection state
-  const newSelection = computeSelectionState(turn.dice, newSelectedIndices);
-
-  // Create new game state with updated selection
-  const newGameState = {
-    ...gameState,
-    turn: {
-      ...turn,
-      selection: newSelection
-    }
-  };
-
-  return { success: true, gameState: newGameState };
-}
-
-/**
- * Compute the DiceSelectionState for a given selection.
- * Uses scoring.js to validate and score the selected dice.
- * 
- * @param {DieState[]} dice - Current dice array
+ * Evaluate selected dice and return validation result.
+ *
+ * @param {DieState[]} dice - Current dice for the turn
  * @param {number[]} selectedIndices - Indices of selected dice
- * @returns {DiceSelectionState} Updated selection state
+ * @returns {{ isValid: boolean, selectionScore: number }} Selection evaluation
  */
-function computeSelectionState(dice, selectedIndices) {
-  // Empty selection is valid with 0 score
-  if (selectedIndices.length === 0) {
-    return {
-      selectedIndices: [],
-      isValid: true,
-      selectionScore: 0
-    };
+function evaluateSelection(dice, selectedIndices) {
+  if (!selectedIndices || selectedIndices.length === 0) {
+    return { isValid: false, selectionScore: 0 };
   }
 
-  // Extract the selected dice values
-  const selectedDice = selectedIndices.map(index => dice[index].value);
+  const selectedValues = selectedIndices.map(index => dice[index].value);
+  const result = scoreDice(selectedValues);
 
-  // Use scoring engine to validate and score
-  const scoringResult = scoreDice(selectedDice);
-
-  return {
-    selectedIndices: [...selectedIndices],
-    isValid: scoringResult.isValid,
-    selectionScore: scoringResult.score
-  };
-}
-
-/**
- * Clear the current dice selection.
- * 
- * @param {GameState} gameState - Current game state
- * @returns {{success: boolean, gameState?: GameState, error?: string}}
- */
-function clearDiceSelection(gameState) {
-  if (!gameState || !gameState.turn) {
-    return { success: false, error: 'No active turn' };
+  if (!result.isValid) {
+    return { isValid: false, selectionScore: 0 };
   }
 
-  const newGameState = {
-    ...gameState,
-    turn: {
-      ...gameState.turn,
-      selection: {
-        selectedIndices: [],
-        isValid: true,
-        selectionScore: 0
-      }
-    }
-  };
-
-  return { success: true, gameState: newGameState };
-}
-
-/**
- * Update the dice selection to a specific set of indices.
- * Used for setting selection programmatically.
- * 
- * @param {GameState} gameState - Current game state
- * @param {number[]} selectedIndices - New selection indices
- * @returns {{success: boolean, gameState?: GameState, error?: string}}
- */
-function setDiceSelection(gameState, selectedIndices) {
-  if (!gameState || !gameState.turn) {
-    return { success: false, error: 'No active turn' };
-  }
-
-  const turn = gameState.turn;
-
-  // Validate all indices
-  for (const index of selectedIndices) {
-    if (index < 0 || index >= turn.dice.length) {
-      return { success: false, error: `Invalid die index: ${index}` };
-    }
-    if (!turn.dice[index].selectable) {
-      return { success: false, error: `Die at index ${index} is not selectable` };
-    }
-  }
-
-  // Compute new selection state
-  const newSelection = computeSelectionState(turn.dice, selectedIndices);
-
-  const newGameState = {
-    ...gameState,
-    turn: {
-      ...turn,
-      selection: newSelection
-    }
-  };
-
-  return { success: true, gameState: newGameState };
+  return { isValid: true, selectionScore: result.score };
 }
 
 // ============================================================================
@@ -542,6 +412,64 @@ function getActivePlayerId(gameState) {
   return gameState.turnOrder[gameState.activeTurnIndex];
 }
 
+/**
+ * Toggle a die selection for the active player's turn.
+ *
+ * @param {GameState} gameState - Current game state
+ * @param {number} dieIndex - Index of the die to toggle
+ * @returns {{success: boolean, gameState?: GameState, error?: string}}
+ */
+function toggleDieSelection(gameState, dieIndex) {
+  if (!gameState) {
+    return { success: false, error: 'Game state is null' };
+  }
+
+  if (gameState.phase !== 'in_progress') {
+    return { success: false, error: `Cannot toggle selection in phase: ${gameState.phase}` };
+  }
+
+  if (!gameState.turn) {
+    return { success: false, error: 'No active turn to toggle selection' };
+  }
+
+  const { turn } = gameState;
+
+  if (dieIndex < 0 || dieIndex >= turn.dice.length) {
+    return { success: false, error: 'Die index out of bounds' };
+  }
+
+  const die = turn.dice[dieIndex];
+  if (!die.selectable) {
+    return { success: false, error: 'Die is not selectable' };
+  }
+
+  const currentlySelected = new Set(turn.selection.selectedIndices);
+  if (currentlySelected.has(dieIndex)) {
+    currentlySelected.delete(dieIndex);
+  } else {
+    currentlySelected.add(dieIndex);
+  }
+
+  const updatedIndices = Array.from(currentlySelected).sort((a, b) => a - b);
+  const evaluation = evaluateSelection(turn.dice, updatedIndices);
+  const newStatus = evaluation.isValid ? 'awaiting_roll' : 'awaiting_selection';
+
+  const newGameState = {
+    ...gameState,
+    turn: {
+      ...turn,
+      selection: {
+        selectedIndices: updatedIndices,
+        isValid: evaluation.isValid,
+        selectionScore: evaluation.selectionScore
+      },
+      status: newStatus
+    }
+  };
+
+  return { success: true, gameState: newGameState };
+}
+
 module.exports = {
   // Dice rolling functions
   rollOneDie,
@@ -550,12 +478,7 @@ module.exports = {
   lockAndRollRemaining,
   isHotDiceCondition,
   rollHotDice,
-  
-  // Dice selection functions
-  toggleDieSelection,
-  computeSelectionState,
-  clearDiceSelection,
-  setDiceSelection,
+  evaluateSelection,
   
   // Core game flow functions
   startGame,
@@ -573,5 +496,8 @@ module.exports = {
   
   // Query helpers
   isActivePlayer,
-  getActivePlayerId
+  getActivePlayerId,
+
+  // Selection handling
+  toggleDieSelection
 };
