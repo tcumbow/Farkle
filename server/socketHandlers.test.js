@@ -201,6 +201,112 @@ function runTests() {
     assert(io.emitted.filter((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).length === 2, 'Broadcasts game_state on disconnect');
   }
 
+  // Start game success (drops ghost players and randomizes order)
+  {
+    const serverState = createServerStateWithGame();
+    const io = createMockIo();
+    const idSequence = ['player-one', 'player-two'];
+    const shuffleTurnOrder = (order) => order.slice().reverse();
+    registerSocketHandlers(io, serverState, {
+      idGenerator: () => idSequence.shift(),
+      shuffleTurnOrder
+    });
+
+    const phoneSocketA = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](phoneSocketA);
+    phoneSocketA.handlers[INCOMING_EVENTS.JOIN_GAME]({ gameId: 'game-test', name: 'Alice' });
+
+    const phoneSocketB = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](phoneSocketB);
+    phoneSocketB.handlers[INCOMING_EVENTS.JOIN_GAME]({ gameId: 'game-test', name: 'Bob' });
+
+    serverState.game.players.push({
+      playerId: 'ghost-player',
+      playerSecret: 'ghost-secret',
+      name: 'Ghost',
+      totalScore: 0,
+      hasEnteredGame: false,
+      connected: true,
+      joinedAt: Date.now()
+    });
+    serverState.game.turnOrder.push('ghost-player');
+
+    const tvSocket = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](tvSocket);
+
+    const broadcastCountBeforeStart = io.emitted.filter((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).length;
+
+    tvSocket.handlers[INCOMING_EVENTS.START_GAME]({});
+
+    assert(serverState.game.phase === 'in_progress', 'Game transitions to in_progress on start');
+    assert(serverState.game.players.length === 2, 'Ghost players removed before start');
+    assert(!serverState.game.players.some((p) => p.playerId === 'ghost-player'), 'Ghost player pruned from roster');
+    assert(serverState.game.turnOrder.length === 2, 'Turn order contains only real players');
+    assert(serverState.game.turn.playerId === serverState.game.turnOrder[0], 'Turn assigned to first shuffled player');
+    assert(serverState.game.turn.dice.length === 6, 'Turn initializes with 6 dice');
+
+    const expectedOrder = ['player-two', 'player-one'];
+    assert(JSON.stringify(serverState.game.turnOrder) === JSON.stringify(expectedOrder), 'Turn order randomized using provided shuffle');
+
+    const broadcastCountAfterStart = io.emitted.filter((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).length;
+    assert(broadcastCountAfterStart === broadcastCountBeforeStart + 1, 'Broadcast game_state after successful start');
+    assert(!tvSocket.emitted.some((evt) => evt.event === OUTGOING_EVENTS.ERROR), 'No error emitted during successful start');
+  }
+
+  // Start game failure scenarios
+  {
+    const serverState = createServerStateWithGame();
+    const io = createMockIo();
+    registerSocketHandlers(io, serverState);
+    const tvSocket = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](tvSocket);
+
+    tvSocket.handlers[INCOMING_EVENTS.START_GAME]({});
+    const errorEvent = tvSocket.emitted.find((evt) => evt.event === OUTGOING_EVENTS.ERROR);
+    assert(!!errorEvent, 'start_game emits error when no players present');
+    assert(errorEvent.payload.code === 'NO_PLAYERS', 'start_game error code identifies missing players');
+    assert(io.emitted.filter((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).length === 0, 'No broadcast when start fails');
+
+    serverState.game.phase = 'in_progress';
+    tvSocket.emitted = [];
+    io.emitted = [];
+    tvSocket.handlers[INCOMING_EVENTS.START_GAME]({});
+    const phaseError = tvSocket.emitted.find((evt) => evt.event === OUTGOING_EVENTS.ERROR);
+    assert(!!phaseError, 'start_game emits error when phase invalid');
+    assert(phaseError.payload.code === 'INVALID_PHASE', 'start_game invalid phase error code reported');
+    assert(io.emitted.filter((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).length === 0, 'No broadcast when phase invalid');
+  }
+
+  // Reset game
+  {
+    const serverState = createServerStateWithGame();
+    const io = createMockIo();
+    const idSequence = ['player-reset'];
+    registerSocketHandlers(io, serverState, { idGenerator: () => idSequence.shift() });
+
+    const phoneSocket = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](phoneSocket);
+    phoneSocket.handlers[INCOMING_EVENTS.JOIN_GAME]({ gameId: 'game-test', name: 'Riley' });
+
+    serverState.eventLog.push({ timestamp: Date.now(), type: 'TEST', payload: {} });
+
+    const tvSocket = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](tvSocket);
+
+    io.emitted = [];
+
+    tvSocket.handlers[INCOMING_EVENTS.RESET_GAME]({});
+
+    assert(serverState.game.phase === 'lobby', 'Reset returns game to lobby phase');
+    assert(serverState.game.players.length === 0, 'Reset clears all players');
+    assert(serverState.eventLog.length === 0, 'Reset clears event log');
+    assert(phoneSocket.data.playerId === undefined, 'Player socket disassociated after reset (playerId removed)');
+    assert(phoneSocket.data.playerSecret === undefined, 'Player socket disassociated after reset (playerSecret removed)');
+    assert(io.emitted.filter((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).length === 1, 'Reset broadcasts new game_state');
+    const finalState = io.emitted.find((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).payload;
+    assert(finalState.players.length === 0, 'Broadcasted state reflects empty roster');
+  }
+
   // Summary
   console.log('\n=== Test Summary ===');
   const total = testsPassed + testsFailed;

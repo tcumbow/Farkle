@@ -6,7 +6,8 @@
  */
 
 const crypto = require('crypto');
-const { createPlayerState, findPlayerById } = require('./state');
+const { createPlayerState, findPlayerById, createNewGame } = require('./state');
+const { startGame: engineStartGame } = require('./gameEngine');
 
 const INCOMING_EVENTS = {
   RECONNECT_PLAYER: 'reconnect_player',
@@ -38,6 +39,15 @@ const DEFAULT_HANDLER = (eventName) => () => {
 
 const defaultIdGenerator = () => crypto.randomBytes(8).toString('hex');
 
+const defaultShuffle = (items) => {
+  const result = items.slice();
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = crypto.randomInt(0, i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
+
 /**
  * Register Socket.IO event listeners.
  *
@@ -58,7 +68,8 @@ function registerSocketHandlers(io, serverState, options = {}) {
 
   const {
     overrides = {},
-    idGenerator = defaultIdGenerator
+    idGenerator = defaultIdGenerator,
+    shuffleTurnOrder = defaultShuffle
   } = options;
 
   const playerSocketMap = new Map();
@@ -82,6 +93,15 @@ function registerSocketHandlers(io, serverState, options = {}) {
     socket.data.playerSecret = player.playerSecret;
     socket.data.gameId = serverState.game ? serverState.game.gameId : null;
     playerSocketMap.set(player.playerId, socket);
+  };
+
+  const clearSocketAssociation = (socket) => {
+    if (!socket || !socket.data) {
+      return;
+    }
+    delete socket.data.playerId;
+    delete socket.data.playerSecret;
+    delete socket.data.gameId;
   };
 
   const generateUniquePlayerId = (game) => {
@@ -197,9 +217,89 @@ function registerSocketHandlers(io, serverState, options = {}) {
     emitGameState();
   };
 
+  const pruneUnreadyPlayers = (game) => {
+    if (!game) {
+      return { validPlayers: [], removedIds: [] };
+    }
+    const validPlayers = [];
+    const removedIds = [];
+    game.players.forEach((player) => {
+      if (
+        player &&
+        typeof player.playerId === 'string' &&
+        player.playerId.length > 0 &&
+        player.connected === true &&
+        typeof player.playerSecret === 'string' &&
+        playerSocketMap.has(player.playerId)
+      ) {
+        validPlayers.push(player);
+      } else {
+        removedIds.push(player ? player.playerId : undefined);
+      }
+    });
+
+    const validIds = new Set(validPlayers.map((p) => p.playerId));
+    game.players = validPlayers;
+    game.turnOrder = game.turnOrder.filter((id) => validIds.has(id));
+
+    removedIds.forEach((id) => {
+      if (id) {
+        playerSocketMap.delete(id);
+      }
+    });
+
+    return { validPlayers, removedIds };
+  };
+
+  const handleStartGame = (socket) => {
+    const game = serverState.game;
+    if (!game) {
+      emitError(socket, 'NO_ACTIVE_GAME', 'No active game exists.');
+      return;
+    }
+
+    if (game.phase !== 'lobby') {
+      emitError(socket, 'INVALID_PHASE', 'Game has already started.');
+      return;
+    }
+
+    pruneUnreadyPlayers(game);
+
+    if (game.players.length === 0) {
+      emitError(socket, 'NO_PLAYERS', 'Cannot start game without players.');
+      return;
+    }
+
+    game.turnOrder = shuffleTurnOrder(game.turnOrder);
+
+    const result = engineStartGame(game);
+    if (!result.success || !result.gameState) {
+      emitError(socket, 'START_FAILED', result.error || 'Unable to start game.');
+      return;
+    }
+
+    serverState.game = result.gameState;
+    emitGameState();
+  };
+
+  const handleResetGame = (socket) => {
+    const newGame = createNewGame();
+    serverState.game = newGame;
+    serverState.eventLog = [];
+
+    playerSocketMap.forEach((playerSocket) => {
+      clearSocketAssociation(playerSocket);
+    });
+    playerSocketMap.clear();
+
+    emitGameState();
+  };
+
   const builtinHandlers = {
     [INCOMING_EVENTS.JOIN_GAME]: handleJoinGame,
     [INCOMING_EVENTS.RECONNECT_PLAYER]: handleReconnectPlayer,
+    [INCOMING_EVENTS.START_GAME]: handleStartGame,
+    [INCOMING_EVENTS.RESET_GAME]: handleResetGame,
     [SOCKET_LIFECYCLE_EVENTS.DISCONNECT]: handleDisconnect
   };
 
