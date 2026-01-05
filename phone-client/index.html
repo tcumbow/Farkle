@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Farkle Phone</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main id="app">
+    <header class="hero">
+      <h1>Join Farkle</h1>
+      <p id="game-info">Loading game…</p>
+    </header>
+
+    <section class="card">
+      <form id="join-form">
+        <label for="player-name">Your Name</label>
+        <input id="player-name" type="text" maxlength="18" autocomplete="name" placeholder="Enter name" required />
+        <button type="submit" id="join-button">Join Game</button>
+      </form>
+      <div id="status" class="status status-info">Connecting…</div>
+      <div id="credentials" class="credentials hidden">
+        <h2>Connected</h2>
+        <p id="player-summary">—</p>
+        <button id="leave-button" type="button">Leave Device</button>
+      </div>
+    </section>
+  </main>
+
+  <template id="message-template">
+    <div class="toast"></div>
+  </template>
+
+  <div id="toast-container"></div>
+
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js" integrity="sha384-tHM7bQ8kGULrrfE0HUpYjQCBuKeQ44W/vIvFFdNpWFmkGGVEbbE0F4sc8leUexiE" crossorigin="anonymous"></script>
+  <script src="app.js"></script>
+</body>
+</html>

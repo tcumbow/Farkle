@@ -1,0 +1,206 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  background: linear-gradient(160deg, #121212, #1f1f1f);
+  color: #f5f5f5;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+}
+
+#app {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hero {
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.hero p {
+  font-size: 16px;
+  color: #cfcfcf;
+}
+
+.card {
+  background: rgba(26, 26, 26, 0.95);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+#join-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#join-form label {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #9fa8da;
+}
+
+#join-form input {
+  padding: 12px;
+  font-size: 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 18, 18, 0.8);
+  color: #f5f5f5;
+}
+
+#join-form input:disabled {
+  opacity: 0.6;
+}
+
+#join-button {
+  margin-top: 4px;
+  padding: 13px;
+  font-size: 18px;
+  border-radius: 8px;
+  border: none;
+  background: #2d6cdf;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+#join-button:disabled {
+  background: #3f3f3f;
+  cursor: not-allowed;
+}
+
+#join-button:not(:disabled):hover {
+  background: #1f4fa3;
+}
+
+.status {
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.status-info {
+  background: rgba(74, 144, 226, 0.12);
+  color: #a1c4fd;
+  border: 1px solid rgba(74, 144, 226, 0.25);
+}
+
+.status-success {
+  background: rgba(61, 220, 151, 0.12);
+  color: #3ddc97;
+  border: 1px solid rgba(61, 220, 151, 0.25);
+}
+
+.status-error {
+  background: rgba(255, 107, 107, 0.12);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 107, 107, 0.25);
+}
+
+.credentials {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.credentials h2 {
+  font-size: 20px;
+}
+
+.credentials p {
+  font-size: 16px;
+  color: #d7d7d7;
+}
+
+#leave-button {
+  align-self: flex-start;
+  padding: 10px 16px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #f5f5f5;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+#leave-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#leave-button:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hidden {
+  display: none;
+}
+
+#toast-container {
+  position: fixed;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  background: rgba(45, 108, 223, 0.95);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: auto;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (max-width: 480px) {
+  body {
+    padding: 16px;
+  }
+
+  .hero h1 {
+    font-size: 30px;
+  }
+
+  #join-button {
+    font-size: 16px;
+  }
+}
