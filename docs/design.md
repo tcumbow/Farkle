@@ -30,9 +30,16 @@ This is a personal project optimized for simplicity, debuggability, and fidelity
 
 ### Server
 - Node.js
-- Express (or Fastify) for HTTP
+- Express for HTTP/static hosting
 - Socket.IO for WebSocket communication
 - `crypto.randomInt()` for dice rolls
+
+### Server Bootstrap
+
+- `server/index.js` creates the HTTP + Socket.IO server
+- Serves TV client from `/` and phone client from `/join`
+- Health check exposed at `/healthz`
+- Optional event log available at `/api/event-log` when `EVENT_LOG_ENABLED=true`
 
 ### Clients
 - TV client: full-screen HTML/CSS/JS (Edge Chromium)
@@ -265,4 +272,3 @@ Used for debugging and rule verification.
 5. Phone client (join + actions)
 6. Reconnection logic
 7. Debug logging
-

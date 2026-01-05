@@ -2,6 +2,8 @@
  * Tests for socketHandlers.js event logic
  */
 
+const crypto = require('crypto');
+
 const {
   registerSocketHandlers,
   INCOMING_EVENTS,
@@ -55,6 +57,21 @@ function createServerStateWithGame(eventLogEnabled = false) {
   serverState.game = createNewGame();
   serverState.game.gameId = 'game-test';
   return serverState;
+}
+
+function withDeterministicRandomInt(callback) {
+  const originalRandomInt = crypto.randomInt;
+  crypto.randomInt = (minOrMax, maybeMax) => {
+    if (typeof maybeMax === 'number') {
+      return minOrMax;
+    }
+    return 0;
+  };
+  try {
+    return callback();
+  } finally {
+    crypto.randomInt = originalRandomInt;
+  }
 }
 
 function runTests() {
@@ -354,6 +371,80 @@ function runTests() {
     const finalState = io.emitted.find((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE).payload;
     assert(finalState.players.length === 0, 'Broadcasted state reflects empty roster');
   }
+
+  // Gameplay handlers (toggle, roll, bank)
+  withDeterministicRandomInt(() => {
+    const serverState = createServerStateWithGame(true);
+    const io = createMockIo();
+    const idSequence = ['player-active', 'player-b'];
+    registerSocketHandlers(io, serverState, {
+      idGenerator: () => idSequence.shift(),
+      shuffleTurnOrder: (order) => order.slice()
+    });
+
+    const phoneSocketA = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](phoneSocketA);
+    phoneSocketA.handlers[INCOMING_EVENTS.JOIN_GAME]({ gameId: 'game-test', name: 'Active' });
+
+    const phoneSocketB = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](phoneSocketB);
+    phoneSocketB.handlers[INCOMING_EVENTS.JOIN_GAME]({ gameId: 'game-test', name: 'Backup' });
+
+    const tvSocket = createMockSocket();
+    io.handlers[SOCKET_LIFECYCLE_EVENTS.CONNECTION](tvSocket);
+    io.emitted = [];
+    tvSocket.handlers[INCOMING_EVENTS.START_GAME]({});
+
+    assert(io.emitted.some((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE), 'Broadcast state after deterministic start');
+
+    const activePlayerId = phoneSocketA.data.playerId;
+    const backupPlayerId = phoneSocketB.data.playerId;
+    assert(serverState.game.turn.playerId === activePlayerId, 'First player is active after start');
+
+    serverState.game.config.minimumEntryScore = 100;
+
+    io.emitted = [];
+    phoneSocketA.handlers[INCOMING_EVENTS.TOGGLE_DIE_SELECTION]({ dieIndex: 0 });
+    assert(serverState.game.turn.selection.isValid === true, 'Toggle yields valid selection');
+    assert(serverState.game.turn.selection.selectionScore > 0, 'Toggle produces positive selection score');
+    assert(io.emitted.some((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE), 'Toggle emits updated game state');
+
+    io.emitted = [];
+    phoneSocketA.handlers[INCOMING_EVENTS.ROLL_DICE]({});
+    assert(serverState.game.turn.playerId === activePlayerId, 'Roll retains active player on non-bust outcome');
+    assert(serverState.game.turn.accumulatedTurnScore > 0, 'Roll accumulates score');
+    assert(serverState.game.turn.selection.selectedIndices.length === 0, 'Roll clears selection');
+    assert(serverState.game.turn.status === 'awaiting_selection', 'Roll resets status to awaiting selection');
+    assert(io.emitted.some((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE), 'Roll emits updated game state');
+    const rollLog = serverState.eventLog.find(
+      (entry) => entry.type === 'DICE_ROLL' && entry.payload.event === INCOMING_EVENTS.ROLL_DICE
+    );
+    assert(!!rollLog, 'Roll handler logs dice roll event with context');
+
+    io.emitted = [];
+    phoneSocketA.handlers[INCOMING_EVENTS.BANK_SCORE]({});
+    const activePlayer = serverState.game.players.find((p) => p.playerId === activePlayerId);
+    assert(activePlayer.totalScore >= 100, 'Bank adds accumulated points to player total');
+    assert(activePlayer.hasEnteredGame === true, 'Bank marks player as entered');
+    assert(serverState.game.turn.playerId === backupPlayerId, 'Bank advances turn to next player');
+    assert(io.emitted.some((evt) => evt.event === OUTGOING_EVENTS.GAME_STATE), 'Bank emits updated game state');
+    const bankLog = serverState.eventLog.find(
+      (entry) => entry.type === 'SCORING' && entry.payload.event === INCOMING_EVENTS.BANK_SCORE
+    );
+    assert(!!bankLog, 'Bank handler logs scoring snapshot');
+    const bankRollLog = serverState.eventLog.find(
+      (entry) => entry.type === 'DICE_ROLL' && entry.payload.event === INCOMING_EVENTS.BANK_SCORE
+    );
+    assert(!!bankRollLog, 'Bank handler logs new turn dice roll');
+
+    io.emitted = [];
+    phoneSocketA.emitted = [];
+    phoneSocketA.handlers[INCOMING_EVENTS.ROLL_DICE]({});
+    const notTurnError = phoneSocketA.emitted.find((evt) => evt.event === OUTGOING_EVENTS.ERROR);
+    assert(!!notTurnError, 'Non-active player receives error when attempting roll');
+    assert(notTurnError.payload.code === 'NOT_YOUR_TURN', 'Error code indicates turn ownership violation');
+    assert(io.emitted.length === 0, 'No broadcast occurs on rejected roll');
+  });
 
   // Summary
   console.log('\n=== Test Summary ===');

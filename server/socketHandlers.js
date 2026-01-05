@@ -7,7 +7,12 @@
 
 const crypto = require('crypto');
 const { createPlayerState, findPlayerById, createNewGame, logEvent } = require('./state');
-const { startGame: engineStartGame } = require('./gameEngine');
+const {
+  startGame: engineStartGame,
+  toggleDieSelection: engineToggleDieSelection,
+  rollTurnDice: engineRollTurnDice,
+  bankTurnScore: engineBankTurnScore
+} = require('./gameEngine');
 
 const INCOMING_EVENTS = {
   RECONNECT_PLAYER: 'reconnect_player',
@@ -119,6 +124,64 @@ function registerSocketHandlers(io, serverState, options = {}) {
 
   const recordScoring = (context = {}) => {
     recordEvent(EVENT_TYPES.SCORING, context);
+  };
+
+  const getPlayerSocketId = (socket) => {
+    if (!socket || !socket.data) {
+      return null;
+    }
+    return typeof socket.data.playerId === 'string' ? socket.data.playerId : null;
+  };
+
+  const ensureActivePlayer = (socket, eventName) => {
+    const game = serverState.game;
+    if (!game) {
+      emitError(socket, 'NO_ACTIVE_GAME', 'No active game is in progress.', {
+        event: eventName
+      });
+      return null;
+    }
+
+    if (game.phase !== 'in_progress' || !game.turn) {
+      emitError(socket, 'INVALID_PHASE', 'Action only allowed during an active turn.', {
+        event: eventName,
+        phase: game.phase
+      });
+      return null;
+    }
+
+    const playerId = getPlayerSocketId(socket);
+    if (!playerId) {
+      emitError(socket, 'UNIDENTIFIED_PLAYER', 'Join the game before performing turn actions.', {
+        event: eventName
+      });
+      return null;
+    }
+
+    if (socket.data.gameId !== game.gameId) {
+      emitError(
+        socket,
+        'STALE_IDENTITY',
+        'Your saved identity is from a previous game. Please rejoin.',
+        {
+          event: eventName,
+          gameId: game.gameId,
+          providedGameId: socket.data.gameId
+        }
+      );
+      return null;
+    }
+
+    if (game.turn.playerId !== playerId) {
+      emitError(socket, 'NOT_YOUR_TURN', 'Only the active player can perform this action.', {
+        event: eventName,
+        playerId,
+        activePlayerId: game.turn.playerId
+      });
+      return null;
+    }
+
+    return { game, playerId };
   };
 
   const emitGameState = () => {
@@ -393,6 +456,296 @@ function registerSocketHandlers(io, serverState, options = {}) {
     emitGameState();
   };
 
+  const handleToggleDieSelection = (socket, payload) => {
+    const context = ensureActivePlayer(socket, INCOMING_EVENTS.TOGGLE_DIE_SELECTION);
+    if (!context) {
+      return;
+    }
+
+    const { game, playerId } = context;
+    const dieIndex = payload && Number.isInteger(payload.dieIndex)
+      ? payload.dieIndex
+      : Number.parseInt(payload && payload.dieIndex, 10);
+
+    if (!Number.isInteger(dieIndex)) {
+      emitError(socket, 'INVALID_PAYLOAD', 'dieIndex must be an integer.', {
+        event: INCOMING_EVENTS.TOGGLE_DIE_SELECTION,
+        providedDieIndex: payload ? payload.dieIndex : undefined
+      });
+      return;
+    }
+
+    const result = engineToggleDieSelection(game, dieIndex);
+    if (!result.success || !result.gameState) {
+      const error = result.error || 'TOGGLE_FAILED';
+      let code = 'TOGGLE_FAILED';
+      let message = 'Unable to update selection.';
+
+      if (error === 'Game state is null') {
+        code = 'NO_ACTIVE_GAME';
+        message = 'No active game is in progress.';
+      } else if (error.startsWith('Cannot toggle selection in phase')) {
+        code = 'INVALID_PHASE';
+        message = 'Cannot toggle dice during this phase.';
+      } else if (error === 'No active turn to toggle selection') {
+        code = 'NO_ACTIVE_TURN';
+        message = 'There is no active turn to update.';
+      } else if (error === 'Die index out of bounds') {
+        code = 'INVALID_DIE_INDEX';
+        message = 'Selected die is not available.';
+      } else if (error === 'Die is not selectable') {
+        code = 'DIE_NOT_SELECTABLE';
+        message = 'Selected die is locked and cannot be toggled.';
+      }
+
+      emitError(socket, code, message, {
+        event: INCOMING_EVENTS.TOGGLE_DIE_SELECTION,
+        playerId,
+        dieIndex,
+        engineError: error
+      });
+      return;
+    }
+
+    serverState.game = result.gameState;
+
+    if (serverState.game.turn) {
+      const selection = serverState.game.turn.selection || {
+        selectedIndices: [],
+        isValid: false,
+        selectionScore: 0
+      };
+
+      recordScoring({
+        event: INCOMING_EVENTS.TOGGLE_DIE_SELECTION,
+        playerId,
+        accumulatedTurnScore: serverState.game.turn.accumulatedTurnScore,
+        selectionScore: selection.selectionScore,
+        selectionValid: selection.isValid,
+        selectedIndices: Array.isArray(selection.selectedIndices)
+          ? [...selection.selectedIndices]
+          : [],
+        status: serverState.game.turn.status
+      });
+    }
+
+    emitGameState();
+  };
+
+  const handleRollDice = (socket) => {
+    const context = ensureActivePlayer(socket, INCOMING_EVENTS.ROLL_DICE);
+    if (!context) {
+      return;
+    }
+
+    const { game, playerId } = context;
+    const previousTurn = game.turn;
+    const previousSelection = previousTurn.selection || {
+      selectedIndices: [],
+      isValid: false,
+      selectionScore: 0
+    };
+
+    if (!previousSelection.isValid || previousSelection.selectedIndices.length === 0) {
+      emitError(socket, 'INVALID_SELECTION', 'Select a valid scoring set before rolling.', {
+        event: INCOMING_EVENTS.ROLL_DICE,
+        playerId,
+        selection: {
+          isValid: previousSelection.isValid,
+          selectedIndices: previousSelection.selectedIndices
+        }
+      });
+      return;
+    }
+
+    const result = engineRollTurnDice(game);
+    if (!result.success || !result.gameState) {
+      const error = result.error || 'ROLL_FAILED';
+      let code = 'ROLL_FAILED';
+      let message = 'Unable to roll dice right now.';
+
+      if (error === 'INVALID_PHASE') {
+        code = 'INVALID_PHASE';
+        message = 'Cannot roll dice in the current phase.';
+      } else if (error === 'INVALID_SELECTION') {
+        code = 'INVALID_SELECTION';
+        message = 'Selection is not valid for rolling.';
+      } else if (error === 'SELECTION_OUT_OF_RANGE') {
+        code = 'SELECTION_OUT_OF_RANGE';
+        message = 'Selection references dice that are not available.';
+      } else if (error === 'DIE_NOT_SELECTABLE') {
+        code = 'DIE_NOT_SELECTABLE';
+        message = 'One or more dice are locked and cannot be rolled.';
+      } else if (error === 'ADVANCE_FAILED') {
+        code = 'ADVANCE_FAILED';
+        message = 'Server failed to advance to the next turn.';
+      }
+
+      emitError(socket, code, message, {
+        event: INCOMING_EVENTS.ROLL_DICE,
+        playerId,
+        engineError: error
+      });
+      return;
+    }
+
+    serverState.game = result.gameState;
+    const outcome = result.outcome || 'continue';
+    const nextTurn = serverState.game.turn;
+
+    recordDiceRoll({
+      event: INCOMING_EVENTS.ROLL_DICE,
+      playerId,
+      outcome,
+      previousAccumulated: previousTurn.accumulatedTurnScore,
+      selectionScoreCommitted: previousSelection.selectionScore,
+      nextPlayerId: nextTurn ? nextTurn.playerId : null,
+      diceValues: nextTurn && Array.isArray(nextTurn.dice)
+        ? nextTurn.dice.map((die) => die.value)
+        : [],
+      selectable: nextTurn && Array.isArray(nextTurn.dice)
+        ? nextTurn.dice.map((die) => die.selectable)
+        : []
+    });
+
+    const playerState = findPlayerById(serverState.game, playerId);
+    recordScoring({
+      event: INCOMING_EVENTS.ROLL_DICE,
+      playerId,
+      accumulatedTurnScore:
+        nextTurn && nextTurn.playerId === playerId
+          ? nextTurn.accumulatedTurnScore
+          : 0,
+      selectionScore: 0,
+      totalScore: playerState ? playerState.totalScore : 0,
+      stage: outcome
+    });
+
+    emitGameState();
+  };
+
+  const handleBankScore = (socket) => {
+    const context = ensureActivePlayer(socket, INCOMING_EVENTS.BANK_SCORE);
+    if (!context) {
+      return;
+    }
+
+    const { game, playerId } = context;
+    const turn = game.turn;
+    const selection = turn.selection || {
+      selectedIndices: [],
+      isValid: false,
+      selectionScore: 0
+    };
+
+    const selectionInPlay = Array.isArray(selection.selectedIndices)
+      ? selection.selectedIndices.length > 0
+      : false;
+
+    if (selectionInPlay && !selection.isValid) {
+      emitError(socket, 'INVALID_SELECTION', 'Current selection is not valid for banking.', {
+        event: INCOMING_EVENTS.BANK_SCORE,
+        playerId,
+        selection
+      });
+      return;
+    }
+
+    if (!selectionInPlay && turn.accumulatedTurnScore <= 0) {
+      emitError(socket, 'BANK_ZERO', 'You need points before banking.', {
+        event: INCOMING_EVENTS.BANK_SCORE,
+        playerId
+      });
+      return;
+    }
+
+    const selectionScore = selection.isValid ? selection.selectionScore : 0;
+    const bankAmount = turn.accumulatedTurnScore + selectionScore;
+    const previousPlayer = findPlayerById(game, playerId);
+
+    if (!previousPlayer) {
+      emitError(socket, 'PLAYER_NOT_FOUND', 'Player could not be located for banking.', {
+        event: INCOMING_EVENTS.BANK_SCORE,
+        playerId
+      });
+      return;
+    }
+
+    const minimumEntryScore = game.config ? game.config.minimumEntryScore || 0 : 0;
+    const projectedTotal = previousPlayer.totalScore + bankAmount;
+    if (!previousPlayer.hasEnteredGame && projectedTotal < minimumEntryScore) {
+      emitError(socket, 'MINIMUM_ENTRY_NOT_MET', 'Reach the minimum entry score before banking.', {
+        event: INCOMING_EVENTS.BANK_SCORE,
+        playerId,
+        minimumEntryScore,
+        projectedTotal,
+        accumulatedTurnScore: turn.accumulatedTurnScore,
+        selectionScore
+      });
+      return;
+    }
+
+    const result = engineBankTurnScore(game);
+    if (!result.success || !result.gameState) {
+      const error = result.error || 'BANK_FAILED';
+      let code = 'BANK_FAILED';
+      let message = 'Unable to bank score right now.';
+
+      if (error === 'INVALID_PHASE') {
+        code = 'INVALID_PHASE';
+        message = 'Cannot bank during the current phase.';
+      } else if (error === 'PLAYER_NOT_FOUND') {
+        code = 'PLAYER_NOT_FOUND';
+        message = 'Player could not be located for banking.';
+      } else if (error === 'INVALID_SELECTION') {
+        code = 'INVALID_SELECTION';
+        message = 'Selection is not valid for banking.';
+      } else if (error === 'BANK_ZERO') {
+        code = 'BANK_ZERO';
+        message = 'You must score before banking.';
+      } else if (error === 'MINIMUM_ENTRY_NOT_MET') {
+        code = 'MINIMUM_ENTRY_NOT_MET';
+        message = 'Reach the minimum entry score before banking.';
+      } else if (error === 'ADVANCE_FAILED') {
+        code = 'ADVANCE_FAILED';
+        message = 'Server failed to advance to the next turn.';
+      }
+
+      emitError(socket, code, message, {
+        event: INCOMING_EVENTS.BANK_SCORE,
+        playerId,
+        engineError: error
+      });
+      return;
+    }
+
+    serverState.game = result.gameState;
+
+    const updatedPlayer = findPlayerById(serverState.game, playerId);
+    const nextTurn = serverState.game.turn;
+
+    recordScoring({
+      event: INCOMING_EVENTS.BANK_SCORE,
+      playerId,
+      bankAmount,
+      totalScore: updatedPlayer ? updatedPlayer.totalScore : previousPlayer ? previousPlayer.totalScore : 0,
+      hasEnteredGame: updatedPlayer ? updatedPlayer.hasEnteredGame : previousPlayer ? previousPlayer.hasEnteredGame : false,
+      stage: 'banked'
+    });
+
+    if (nextTurn) {
+      recordDiceRoll({
+        event: INCOMING_EVENTS.BANK_SCORE,
+        playerId: nextTurn.playerId,
+        outcome: 'turn_start',
+        diceValues: Array.isArray(nextTurn.dice) ? nextTurn.dice.map((die) => die.value) : [],
+        selectable: Array.isArray(nextTurn.dice) ? nextTurn.dice.map((die) => die.selectable) : []
+      });
+    }
+
+    emitGameState();
+  };
+
   const handleResetGame = (socket) => {
     const newGame = createNewGame();
     serverState.game = newGame;
@@ -410,6 +763,9 @@ function registerSocketHandlers(io, serverState, options = {}) {
     [INCOMING_EVENTS.JOIN_GAME]: handleJoinGame,
     [INCOMING_EVENTS.RECONNECT_PLAYER]: handleReconnectPlayer,
     [INCOMING_EVENTS.START_GAME]: handleStartGame,
+    [INCOMING_EVENTS.TOGGLE_DIE_SELECTION]: handleToggleDieSelection,
+    [INCOMING_EVENTS.ROLL_DICE]: handleRollDice,
+    [INCOMING_EVENTS.BANK_SCORE]: handleBankScore,
     [INCOMING_EVENTS.RESET_GAME]: handleResetGame,
     [SOCKET_LIFECYCLE_EVENTS.DISCONNECT]: handleDisconnect
   };
