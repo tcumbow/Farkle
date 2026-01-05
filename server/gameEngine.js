@@ -6,7 +6,7 @@
  */
 
 const crypto = require('crypto');
-const { scoreDice } = require('./scoring');
+const { scoreDice, isBust } = require('./scoring');
 
 // ============================================================================
 // Dice Rolling Functions
@@ -110,6 +110,14 @@ function evaluateSelection(dice, selectedIndices) {
   }
 
   return { isValid: true, selectionScore: result.score };
+}
+
+function cloneDiceArray(dice) {
+  return dice.map(die => ({ ...die }));
+}
+
+function clonePlayers(players) {
+  return players.map(player => ({ ...player }));
 }
 
 // ============================================================================
@@ -230,6 +238,176 @@ function initializeTurnState(playerId, dice, accumulatedTurnScore = 0) {
     },
     status: 'awaiting_selection'
   };
+}
+
+/**
+ * Roll dice for the active player's current selection.
+ *
+ * @param {GameState} gameState - Current game state
+ * @returns {{success: boolean, gameState?: GameState, error?: string, outcome?: 'bust' | 'hot_dice'}}
+ */
+function rollTurnDice(gameState) {
+  if (!gameState || gameState.phase !== 'in_progress' || !gameState.turn) {
+    return { success: false, error: 'INVALID_PHASE' };
+  }
+
+  const turn = gameState.turn;
+  const dice = turn.dice || [];
+
+  if (!turn.selection || !turn.selection.isValid || turn.selection.selectedIndices.length === 0) {
+    return { success: false, error: 'INVALID_SELECTION' };
+  }
+
+  const selectedIndices = [...turn.selection.selectedIndices];
+  const diceCount = dice.length;
+  const selectedIndexSet = new Set(selectedIndices);
+
+  for (const index of selectedIndexSet) {
+    if (index < 0 || index >= diceCount) {
+      return { success: false, error: 'SELECTION_OUT_OF_RANGE' };
+    }
+    if (!dice[index].selectable) {
+      return { success: false, error: 'DIE_NOT_SELECTABLE' };
+    }
+  }
+
+  const selectableIndices = [];
+  dice.forEach((die, index) => {
+    if (die.selectable) {
+      selectableIndices.push(index);
+    }
+  });
+
+  const allSelectableChosen = selectedIndexSet.size === selectableIndices.length;
+
+  const updatedDice = cloneDiceArray(dice);
+  let rolledValues = [];
+  let outcome;
+
+  if (allSelectableChosen && selectableIndices.length > 0) {
+    const newDice = rollInitialDice();
+    rolledValues = newDice.map(d => d.value);
+    updatedDice.splice(0, updatedDice.length, ...newDice);
+    outcome = 'hot_dice';
+  } else {
+    rolledValues = [];
+    for (let index = 0; index < updatedDice.length; index += 1) {
+      const die = updatedDice[index];
+      if (!die.selectable) {
+        continue;
+      }
+
+      if (selectedIndexSet.has(index)) {
+        updatedDice[index] = {
+          value: die.value,
+          selectable: false
+        };
+      } else {
+        updatedDice[index] = {
+          value: rollOneDie(),
+          selectable: true
+        };
+        rolledValues.push(updatedDice[index].value);
+      }
+    }
+  }
+
+  if (rolledValues.length === 0) {
+    rolledValues = updatedDice.filter(d => d.selectable).map(d => d.value);
+  }
+
+  const busted = rolledValues.length > 0 && isBust(rolledValues);
+  if (busted) {
+    const clearedGame = {
+      ...gameState,
+      players: clonePlayers(gameState.players),
+      turn: null
+    };
+    const advanceResult = advanceToNextTurn(clearedGame);
+    if (!advanceResult.success) {
+      return { success: false, error: advanceResult.error || 'ADVANCE_FAILED' };
+    }
+    return { success: true, gameState: advanceResult.gameState, outcome: 'bust' };
+  }
+
+  const newTurn = {
+    ...turn,
+    dice: updatedDice,
+    accumulatedTurnScore: turn.accumulatedTurnScore + turn.selection.selectionScore,
+    selection: {
+      selectedIndices: [],
+      isValid: false,
+      selectionScore: 0
+    },
+    status: 'awaiting_selection'
+  };
+
+  const newGameState = {
+    ...gameState,
+    players: clonePlayers(gameState.players),
+    turn: newTurn
+  };
+
+  return { success: true, gameState: newGameState, outcome };
+}
+
+/**
+ * Bank the active player's accumulated turn score.
+ *
+ * @param {GameState} gameState - Current game state
+ * @returns {{success: boolean, gameState?: GameState, error?: string}}
+ */
+function bankTurnScore(gameState) {
+  if (!gameState || gameState.phase !== 'in_progress' || !gameState.turn) {
+    return { success: false, error: 'INVALID_PHASE' };
+  }
+
+  const turn = gameState.turn;
+  const playerId = turn.playerId;
+  const playersCopy = clonePlayers(gameState.players);
+  const playerIndex = playersCopy.findIndex(p => p.playerId === playerId);
+
+  if (playerIndex === -1) {
+    return { success: false, error: 'PLAYER_NOT_FOUND' };
+  }
+
+  if (!turn.selection.isValid && turn.selection.selectedIndices.length > 0) {
+    return { success: false, error: 'INVALID_SELECTION' };
+  }
+
+  const selectionScore = turn.selection.isValid ? turn.selection.selectionScore : 0;
+  const bankTotal = turn.accumulatedTurnScore + selectionScore;
+
+  if (bankTotal <= 0) {
+    return { success: false, error: 'BANK_ZERO' };
+  }
+
+  const player = playersCopy[playerIndex];
+  const newTotal = player.totalScore + bankTotal;
+  const minimumEntry = gameState.config ? gameState.config.minimumEntryScore || 0 : 0;
+
+  if (!player.hasEnteredGame && newTotal < minimumEntry) {
+    return { success: false, error: 'MINIMUM_ENTRY_NOT_MET' };
+  }
+
+  playersCopy[playerIndex] = {
+    ...player,
+    totalScore: newTotal,
+    hasEnteredGame: player.hasEnteredGame || newTotal >= minimumEntry
+  };
+
+  const interimGameState = {
+    ...gameState,
+    players: playersCopy,
+    turn: null
+  };
+
+  const advanceResult = advanceToNextTurn(interimGameState);
+  if (!advanceResult.success) {
+    return { success: false, error: advanceResult.error || 'ADVANCE_FAILED' };
+  }
+
+  return { success: true, gameState: advanceResult.gameState };
 }
 
 /**
@@ -484,6 +662,8 @@ module.exports = {
   startGame,
   advanceToNextTurn,
   initializeTurnState,
+  rollTurnDice,
+  bankTurnScore,
   finishGame,
   
   // Lobby management

@@ -15,10 +15,13 @@ const {
   addPlayer,
   finishGame,
   toggleDieSelection,
-  evaluateSelection
+  evaluateSelection,
+  rollTurnDice,
+  bankTurnScore
 } = require('./gameEngine');
 
 const { createNewGame, createPlayerState } = require('./state');
+const crypto = require('crypto');
 
 let testsPassed = 0;
 let testsFailed = 0;
@@ -31,6 +34,43 @@ function assert(condition, message) {
     console.error(`  ❌ FAILED: ${message}`);
     testsFailed++;
   }
+}
+
+function withMockedRandomInts(mockValues, callback) {
+  const originalRandomInt = crypto.randomInt;
+  let index = 0;
+
+  crypto.randomInt = (minOrMax, maybeMax) => {
+    const hasMax = typeof maybeMax === 'number';
+    const min = hasMax ? minOrMax : 0;
+    const max = hasMax ? maybeMax : minOrMax;
+
+    if (index >= mockValues.length) {
+      throw new Error('Insufficient mock random values');
+    }
+
+    const value = mockValues[index];
+    index++;
+
+    if (value < min || value >= max) {
+      throw new Error(`Mock random value ${value} out of range [${min}, ${max})`);
+    }
+
+    return value;
+  };
+
+  try {
+    return callback();
+  } finally {
+    crypto.randomInt = originalRandomInt;
+  }
+}
+
+function makePlayer(id, name, overrides = {}) {
+  return {
+    ...createPlayerState(id, name),
+    ...overrides
+  };
 }
 
 function assertEquals(actual, expected, message) {
@@ -245,6 +285,227 @@ function runTests() {
 
   const outOfBoundsResult = toggleDieSelection(selectionGameStateBase, 10);
   assert(!outOfBoundsResult.success, 'Toggle fails on out-of-bounds index');
+
+  // === rollTurnDice Tests ===
+  console.log('\n--- rollTurnDice Tests ---');
+
+  const rollPlayers = [
+    makePlayer('p1', 'Alice'),
+    makePlayer('p2', 'Bob')
+  ];
+
+  const rollGameState = {
+    phase: 'in_progress',
+    config: { minimumEntryScore: 500 },
+    players: rollPlayers,
+    turnOrder: ['p1', 'p2'],
+    activeTurnIndex: 0,
+    turn: {
+      playerId: 'p1',
+      dice: [
+        { value: 1, selectable: true },
+        { value: 2, selectable: true },
+        { value: 3, selectable: true }
+      ],
+      accumulatedTurnScore: 0,
+      selection: {
+        selectedIndices: [0],
+        isValid: true,
+        selectionScore: 100
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  withMockedRandomInts([5, 5], () => {
+    const rollResult = rollTurnDice(rollGameState);
+    assert(rollResult.success, 'rollTurnDice succeeds with valid selection');
+    assertEquals(rollResult.outcome, undefined, 'No special outcome when dice remain');
+    assertEquals(rollResult.gameState.turn.accumulatedTurnScore, 100, 'Accumulated score increases by selection');
+    assertEquals(rollResult.gameState.turn.dice.length, 3, 'Dice count unchanged when not hot dice');
+    assert(!rollResult.gameState.turn.dice[0].selectable, 'Selected die locks after roll');
+    assertEquals(rollResult.gameState.turn.selection.selectedIndices.length, 0, 'Selection resets after roll');
+    assertEquals(rollResult.gameState.turn.status, 'awaiting_selection', 'Status resets to awaiting_selection');
+  });
+
+  const hotDicePlayers = [
+    makePlayer('h1', 'Hal'),
+    makePlayer('h2', 'Bea')
+  ];
+
+  const hotDiceState = {
+    phase: 'in_progress',
+    config: { minimumEntryScore: 500 },
+    players: hotDicePlayers,
+    turnOrder: ['h1', 'h2'],
+    activeTurnIndex: 0,
+    turn: {
+      playerId: 'h1',
+      dice: [
+        { value: 1, selectable: true },
+        { value: 1, selectable: true },
+        { value: 1, selectable: true }
+      ],
+      accumulatedTurnScore: 400,
+      selection: {
+        selectedIndices: [0, 1, 2],
+        isValid: true,
+        selectionScore: 1000
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  withMockedRandomInts([1, 2, 3, 4, 5, 6], () => {
+    const hotResult = rollTurnDice(hotDiceState);
+    assert(hotResult.success, 'rollTurnDice succeeds with hot dice selection');
+    assertEquals(hotResult.outcome, 'hot_dice', 'Hot dice outcome reported');
+    assertEquals(hotResult.gameState.turn.dice.length, 6, 'Hot dice resets to six dice');
+    assert(hotResult.gameState.turn.dice.every(d => d.selectable), 'All dice selectable after hot dice');
+    assertEquals(hotResult.gameState.turn.accumulatedTurnScore, 1400, 'Accumulated score adds selection before hot dice reroll');
+    assertEquals(hotResult.gameState.turn.selection.selectedIndices.length, 0, 'Selection cleared after hot dice roll');
+  });
+
+  const bustPlayers = [
+    makePlayer('b1', 'Finn'),
+    makePlayer('b2', 'Gia')
+  ];
+
+  const bustState = {
+    phase: 'in_progress',
+    config: { minimumEntryScore: 500 },
+    players: bustPlayers,
+    turnOrder: ['b1', 'b2'],
+    activeTurnIndex: 0,
+    turn: {
+      playerId: 'b1',
+      dice: [
+        { value: 1, selectable: true },
+        { value: 2, selectable: true },
+        { value: 3, selectable: true }
+      ],
+      accumulatedTurnScore: 200,
+      selection: {
+        selectedIndices: [0],
+        isValid: true,
+        selectionScore: 100
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  withMockedRandomInts([2, 3, 1, 1, 1, 1, 1, 1], () => {
+    const bustResult = rollTurnDice(bustState);
+    assert(bustResult.success, 'rollTurnDice returns success even on bust');
+    assertEquals(bustResult.outcome, 'bust', 'Bust outcome reported');
+    assertEquals(bustResult.gameState.activeTurnIndex, 1, 'Turn advances to next player after bust');
+    assertEquals(bustResult.gameState.turn.playerId, 'b2', 'Next player becomes active after bust');
+    assertEquals(bustResult.gameState.turn.accumulatedTurnScore, 0, 'Next turn starts with zero accumulated score');
+  });
+
+  // === bankTurnScore Tests ===
+  console.log('\n--- bankTurnScore Tests ---');
+
+  const bankPlayers = [
+    makePlayer('bp1', 'Ivy', { totalScore: 100, hasEnteredGame: false }),
+    makePlayer('bp2', 'Jax', { totalScore: 0, hasEnteredGame: false })
+  ];
+
+  const bankState = {
+    phase: 'in_progress',
+    config: { minimumEntryScore: 500 },
+    players: bankPlayers,
+    turnOrder: ['bp1', 'bp2'],
+    activeTurnIndex: 0,
+    turn: {
+      playerId: 'bp1',
+      dice: [
+        { value: 1, selectable: true },
+        { value: 5, selectable: true },
+        { value: 2, selectable: true }
+      ],
+      accumulatedTurnScore: 300,
+      selection: {
+        selectedIndices: [0],
+        isValid: true,
+        selectionScore: 250
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  withMockedRandomInts([1, 2, 3, 4, 5, 6], () => {
+    const bankResult = bankTurnScore(bankState);
+    assert(bankResult.success, 'bankTurnScore succeeds with valid selection');
+    assertEquals(bankResult.gameState.players[0].totalScore, 650, 'Banked score added to player total');
+    assert(bankResult.gameState.players[0].hasEnteredGame, 'Player marked as entered after surpassing minimum score');
+    assertEquals(bankResult.gameState.activeTurnIndex, 1, 'Active turn index advances after banking');
+    assertEquals(bankResult.gameState.turn.playerId, 'bp2', 'Next player becomes active after banking');
+  });
+
+  const entryFailPlayers = [
+    makePlayer('ef1', 'Kim', { totalScore: 0, hasEnteredGame: false }),
+    makePlayer('ef2', 'Lou', { totalScore: 0, hasEnteredGame: false })
+  ];
+
+  const entryFailState = {
+    phase: 'in_progress',
+    config: { minimumEntryScore: 500 },
+    players: entryFailPlayers,
+    turnOrder: ['ef1', 'ef2'],
+    activeTurnIndex: 0,
+    turn: {
+      playerId: 'ef1',
+      dice: [
+        { value: 1, selectable: true },
+        { value: 2, selectable: true },
+        { value: 3, selectable: true }
+      ],
+      accumulatedTurnScore: 200,
+      selection: {
+        selectedIndices: [0],
+        isValid: true,
+        selectionScore: 100
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  const entryFailResult = bankTurnScore(entryFailState);
+  assert(!entryFailResult.success, 'bankTurnScore fails when minimum entry not met');
+  assertEquals(entryFailResult.error, 'MINIMUM_ENTRY_NOT_MET', 'Minimum entry error code returned');
+
+  const invalidSelectionPlayers = [
+    makePlayer('is1', 'Moe'),
+    makePlayer('is2', 'Nia')
+  ];
+
+  const invalidSelectionState = {
+    phase: 'in_progress',
+    config: { minimumEntryScore: 500 },
+    players: invalidSelectionPlayers,
+    turnOrder: ['is1', 'is2'],
+    activeTurnIndex: 0,
+    turn: {
+      playerId: 'is1',
+      dice: [
+        { value: 2, selectable: true },
+        { value: 3, selectable: true },
+        { value: 4, selectable: true }
+      ],
+      accumulatedTurnScore: 0,
+      selection: {
+        selectedIndices: [0],
+        isValid: false,
+        selectionScore: 0
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  const invalidSelectionResult = bankTurnScore(invalidSelectionState);
+  assert(!invalidSelectionResult.success, 'bankTurnScore rejects invalid selection with dice selected');
+  assertEquals(invalidSelectionResult.error, 'INVALID_SELECTION', 'Invalid selection error code returned');
 
   // === Randomness Test ===
   console.log('\n--- Randomness Tests ---');
