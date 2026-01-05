@@ -29,6 +29,7 @@
   let socket;
   let pendingJoin = false;
   let latestGameState = null;
+  let lastDiceSignature = null;
   let reconnectAttempted = false;
   let identityRecognized = false;
   let currentIdentity = null;
@@ -39,6 +40,7 @@
     if (!gameId) {
       setStatus('error', 'Missing gameId in URL. Scan QR code again.');
       disableForm();
+      lastDiceSignature = null;
       return;
     }
 
@@ -229,6 +231,7 @@
     if (!identity) {
       hideElement(turnCard);
       clearDice();
+      lastDiceSignature = null;
       disableActionButtons();
       turnHintEl.textContent = 'Join the game to begin playing.';
       return;
@@ -245,6 +248,7 @@
       turnAccumulatedEl.textContent = 'Turn score: 0';
       turnSelectionEl.textContent = 'Selection: 0';
       clearDice();
+      lastDiceSignature = null;
       disableActionButtons();
       turnHintEl.textContent = 'Awaiting game creation on the TV.';
       return;
@@ -259,6 +263,7 @@
       turnAccumulatedEl.textContent = 'Turn score: 0';
       turnSelectionEl.textContent = 'Selection: 0';
       clearDice();
+      lastDiceSignature = null;
       disableActionButtons();
       turnHintEl.textContent = 'Leave the device or join again with the QR code.';
       return;
@@ -272,6 +277,7 @@
       turnAccumulatedEl.textContent = 'Turn score: 0';
       turnSelectionEl.textContent = 'Selection: 0';
       clearDice();
+      lastDiceSignature = null;
       disableActionButtons();
       turnHintEl.textContent = gameState.phase === 'lobby'
         ? 'Hang tight until the TV starts the game.'
@@ -428,10 +434,14 @@
     clearDice();
 
     if (!Array.isArray(dice) || dice.length === 0) {
+      lastDiceSignature = null;
       return;
     }
 
     const selectedSet = new Set(selectedIndices);
+    const signature = dice.map(d => `${d.value}:${d.selectable ? 1 : 0}`).join(',');
+    const shouldAnimate = signature !== lastDiceSignature;
+    lastDiceSignature = signature;
 
     dice.forEach((die, index) => {
       const dieEl = document.createElement('div');
@@ -449,6 +459,16 @@
       }
 
       dieEl.textContent = String(die.value);
+
+      if (shouldAnimate) {
+        requestAnimationFrame(() => {
+          dieEl.classList.add('roll-animating');
+        });
+        dieEl.addEventListener('animationend', () => {
+          dieEl.classList.remove('roll-animating');
+        }, { once: true });
+      }
+
       diceContainer.appendChild(dieEl);
     });
   }

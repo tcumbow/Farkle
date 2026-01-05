@@ -25,6 +25,7 @@
 
   let qrInstance = null;
   let latestGameState = null;
+  let lastTurnDiceSignature = null;
 
   const socket = io({ transports: ['websocket'] });
 
@@ -69,6 +70,7 @@
     if (!gameState) {
       renderEmptyState();
       toggleButtons(null);
+      lastTurnDiceSignature = null;
       return;
     }
 
@@ -187,6 +189,7 @@
     if (gameState.phase !== 'in_progress' || !gameState.turn) {
       hideElement(inProgressView);
       clearDice();
+      lastTurnDiceSignature = null;
       return;
     }
 
@@ -222,6 +225,12 @@
     clearDice();
     const selected = new Set(selectedIndices);
 
+     const currentSignature = Array.isArray(dice)
+       ? dice.map(d => `${d.value}:${d.selectable ? 1 : 0}`).join(',')
+       : null;
+     const shouldAnimate = currentSignature && currentSignature !== lastTurnDiceSignature;
+     lastTurnDiceSignature = currentSignature;
+
     dice.forEach((die, index) => {
       const dieEl = document.createElement('div');
       dieEl.classList.add('die');
@@ -235,6 +244,15 @@
 
       if (selected.has(index)) {
         dieEl.classList.add('selected');
+      }
+
+      if (shouldAnimate) {
+        requestAnimationFrame(() => {
+          dieEl.classList.add('roll-animating');
+        });
+        dieEl.addEventListener('animationend', () => {
+          dieEl.classList.remove('roll-animating');
+        }, { once: true });
       }
 
       diceContainer.appendChild(dieEl);
