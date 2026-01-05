@@ -1,24 +1,106 @@
 /**
  * Farkle Game Engine
  * 
- * Pure functions for game state transitions.
+ * Functions for game state transitions and dice rolling.
  * Implements logic as specified in docs/turn-lifecycle-walkthrough.md
- * 
- * Note: These functions are pure - they do NOT:
- * - Roll dice (caller provides dice)
- * - Score selections (caller provides scores)
- * - Mutate state (they return new state)
  */
+
+const crypto = require('crypto');
+
+// ============================================================================
+// Dice Rolling Functions
+// ============================================================================
+
+/**
+ * Roll a single die using crypto.randomInt.
+ * 
+ * @returns {number} Die value (1-6)
+ */
+function rollOneDie() {
+  return crypto.randomInt(1, 7); // 1-6 inclusive
+}
+
+/**
+ * Roll multiple dice and return DieState array.
+ * 
+ * @param {number} count - Number of dice to roll
+ * @param {boolean} selectable - Whether dice should be selectable (default true)
+ * @returns {DieState[]} Array of rolled dice
+ */
+function rollDice(count, selectable = true) {
+  const dice = [];
+  for (let i = 0; i < count; i++) {
+    dice.push({
+      value: rollOneDie(),
+      selectable
+    });
+  }
+  return dice;
+}
+
+/**
+ * Roll initial dice for a new turn (6 dice, all selectable).
+ * 
+ * @returns {DieState[]} Six rolled dice
+ */
+function rollInitialDice() {
+  return rollDice(6, true);
+}
+
+/**
+ * After a selection, lock the selected dice and roll new dice for the remaining slots.
+ * Returns a new dice array with selected dice locked (non-selectable) and new rolled dice.
+ * 
+ * @param {DieState[]} currentDice - Current dice array
+ * @param {number[]} selectedIndices - Indices of selected dice to lock
+ * @returns {DieState[]} New dice array with locked selected dice removed and new dice rolled
+ */
+function lockAndRollRemaining(currentDice, selectedIndices) {
+  // Calculate how many dice remain (not selected)
+  const remainingCount = currentDice.length - selectedIndices.length;
+  
+  if (remainingCount === 0) {
+    // Hot dice condition - all dice were selected
+    // Caller should handle this case separately
+    return [];
+  }
+
+  // Roll new dice for the remaining count
+  return rollDice(remainingCount, true);
+}
+
+/**
+ * Check if hot dice condition occurred (all dice were selected).
+ * 
+ * @param {number} currentDiceCount - Number of dice before selection
+ * @param {number[]} selectedIndices - Indices of selected dice
+ * @returns {boolean} True if hot dice occurred
+ */
+function isHotDiceCondition(currentDiceCount, selectedIndices) {
+  return selectedIndices.length === currentDiceCount;
+}
+
+/**
+ * Handle hot dice reset - return 6 new dice.
+ * 
+ * @returns {DieState[]} Six new rolled dice
+ */
+function rollHotDice() {
+  return rollDice(6, true);
+}
+
+// ============================================================================
+// Game Flow Functions
+// ============================================================================
 
 /**
  * Start a game from lobby phase.
  * Transitions to in_progress and initializes the first player's turn.
  * 
  * @param {GameState} gameState - Current game state (must be in lobby phase)
- * @param {DieState[]} initialDice - Six dice for the first turn (provided by caller)
  * @returns {{success: boolean, gameState?: GameState, error?: string}}
  */
-function startGame(gameState, initialDice) {
+function startGame(gameState) {
   // Validation
   if (!gameState) {
     return { success: false, error: 'Game state is null' };
@@ -32,9 +114,8 @@ function startGame(gameState, initialDice) {
     return { success: false, error: 'Cannot start game with no players' };
   }
 
-  if (!initialDice || initialDice.length !== 6) {
-    return { success: false, error: 'Must provide exactly 6 initial dice' };
-  }
+  // Roll initial dice for first player
+  const initialDice = rollInitialDice();
 
   // Create a new game state (pure - don't mutate)
   const newGameState = {
@@ -43,7 +124,7 @@ function startGame(gameState, initialDice) {
     activeTurnIndex: 0,
     turn: {
       playerId: gameState.turnOrder[0],
-      dice: initialDice.map(d => ({ ...d })), // Copy dice
+      dice: initialDice,
       accumulatedTurnScore: 0,
       selection: {
         selectedIndices: [],
@@ -62,10 +143,9 @@ function startGame(gameState, initialDice) {
  * Used after a player banks or busts.
  * 
  * @param {GameState} gameState - Current game state
- * @param {DieState[]} nextPlayerDice - Six dice for the next turn (provided by caller)
  * @returns {{success: boolean, gameState?: GameState, error?: string}}
  */
-function advanceToNextTurn(gameState, nextPlayerDice) {
+function advanceToNextTurn(gameState) {
   // Validation
   if (!gameState) {
     return { success: false, error: 'Game state is null' };
@@ -75,13 +155,12 @@ function advanceToNextTurn(gameState, nextPlayerDice) {
     return { success: false, error: `Cannot advance turn in phase: ${gameState.phase}` };
   }
 
-  if (!nextPlayerDice || nextPlayerDice.length !== 6) {
-    return { success: false, error: 'Must provide exactly 6 dice for next turn' };
-  }
-
   // Calculate next turn index (wrap around)
   const nextIndex = (gameState.activeTurnIndex + 1) % gameState.turnOrder.length;
   const nextPlayerId = gameState.turnOrder[nextIndex];
+
+  // Roll initial dice for next player
+  const nextPlayerDice = rollInitialDice();
 
   // Create new game state
   const newGameState = {
@@ -89,7 +168,7 @@ function advanceToNextTurn(gameState, nextPlayerDice) {
     activeTurnIndex: nextIndex,
     turn: {
       playerId: nextPlayerId,
-      dice: nextPlayerDice.map(d => ({ ...d })), // Copy dice
+      dice: nextPlayerDice,
       accumulatedTurnScore: 0,
       selection: {
         selectedIndices: [],
@@ -311,6 +390,14 @@ function getActivePlayerId(gameState) {
 }
 
 module.exports = {
+  // Dice rolling functions
+  rollOneDie,
+  rollDice,
+  rollInitialDice,
+  lockAndRollRemaining,
+  isHotDiceCondition,
+  rollHotDice,
+  
   // Core game flow functions
   startGame,
   advanceToNextTurn,
