@@ -6,7 +6,7 @@
  */
 
 const crypto = require('crypto');
-const { scoreDice, isBust } = require('./scoring');
+const { scoreDice, isBust, getBestScore } = require('./scoring');
 
 // ============================================================================
 // Dice Rolling Functions
@@ -112,6 +112,83 @@ function evaluateSelection(dice, selectedIndices) {
   return { isValid: true, selectionScore: result.score };
 }
 
+function computeDefaultSelection(dice) {
+  if (!Array.isArray(dice) || dice.length === 0) {
+    return { indices: [], evaluation: { isValid: false, selectionScore: 0 } };
+  }
+
+  const selectableEntries = dice
+    .map((die, index) => (die.selectable ? { index, value: die.value } : null))
+    .filter(entry => entry !== null);
+
+  if (selectableEntries.length === 0) {
+    return { indices: [], evaluation: { isValid: false, selectionScore: 0 } };
+  }
+
+  const values = selectableEntries.map(entry => entry.value);
+  const best = getBestScore(values);
+
+  if (!best.selection || best.selection.length === 0) {
+    return { indices: [], evaluation: { isValid: false, selectionScore: 0 } };
+  }
+
+  const valueToIndices = new Map();
+  selectableEntries.forEach(entry => {
+    if (!valueToIndices.has(entry.value)) {
+      valueToIndices.set(entry.value, []);
+    }
+    valueToIndices.get(entry.value).push(entry.index);
+  });
+
+  const selectedIndices = [];
+  for (const value of best.selection) {
+    const indexList = valueToIndices.get(value);
+    if (!indexList || indexList.length === 0) {
+      return { indices: [], evaluation: { isValid: false, selectionScore: 0 } };
+    }
+    selectedIndices.push(indexList.shift());
+  }
+
+  selectedIndices.sort((a, b) => a - b);
+
+  const evaluation = evaluateSelection(dice, selectedIndices);
+  if (!evaluation.isValid) {
+    return { indices: [], evaluation };
+  }
+
+  return { indices: selectedIndices, evaluation };
+}
+
+function applyDefaultSelectionToTurn(turn) {
+  if (!turn || !Array.isArray(turn.dice)) {
+    return turn;
+  }
+
+  const { indices, evaluation } = computeDefaultSelection(turn.dice);
+
+  if (!evaluation.isValid || indices.length === 0) {
+    return {
+      ...turn,
+      selection: {
+        selectedIndices: [],
+        isValid: false,
+        selectionScore: 0
+      },
+      status: 'awaiting_selection'
+    };
+  }
+
+  return {
+    ...turn,
+    selection: {
+      selectedIndices: indices,
+      isValid: true,
+      selectionScore: evaluation.selectionScore
+    },
+    status: 'awaiting_roll'
+  };
+}
+
 function cloneDiceArray(dice) {
   return dice.map(die => ({ ...die }));
 }
@@ -153,7 +230,7 @@ function startGame(gameState) {
     ...gameState,
     phase: 'in_progress',
     activeTurnIndex: 0,
-    turn: {
+    turn: applyDefaultSelectionToTurn({
       playerId: gameState.turnOrder[0],
       dice: initialDice,
       accumulatedTurnScore: 0,
@@ -163,7 +240,7 @@ function startGame(gameState) {
         selectionScore: 0
       },
       status: 'awaiting_selection'
-    }
+    })
   };
 
   return { success: true, gameState: newGameState };
@@ -197,7 +274,7 @@ function advanceToNextTurn(gameState) {
   const newGameState = {
     ...gameState,
     activeTurnIndex: nextIndex,
-    turn: {
+    turn: applyDefaultSelectionToTurn({
       playerId: nextPlayerId,
       dice: nextPlayerDice,
       accumulatedTurnScore: 0,
@@ -207,7 +284,7 @@ function advanceToNextTurn(gameState) {
         selectionScore: 0
       },
       status: 'awaiting_selection'
-    }
+    })
   };
 
   return { success: true, gameState: newGameState };
@@ -227,7 +304,7 @@ function initializeTurnState(playerId, dice, accumulatedTurnScore = 0) {
     throw new Error('Cannot initialize turn with no dice');
   }
 
-  return {
+  return applyDefaultSelectionToTurn({
     playerId,
     dice: dice.map(d => ({ ...d })), // Copy dice
     accumulatedTurnScore,
@@ -237,7 +314,7 @@ function initializeTurnState(playerId, dice, accumulatedTurnScore = 0) {
       selectionScore: 0
     },
     status: 'awaiting_selection'
-  };
+  });
 }
 
 /**
@@ -342,10 +419,12 @@ function rollTurnDice(gameState) {
     status: 'awaiting_selection'
   };
 
+  const turnWithDefaultSelection = applyDefaultSelectionToTurn(newTurn);
+
   const newGameState = {
     ...gameState,
     players: clonePlayers(gameState.players),
-    turn: newTurn
+    turn: turnWithDefaultSelection
   };
 
   return { success: true, gameState: newGameState, outcome };

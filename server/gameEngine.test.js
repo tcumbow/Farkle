@@ -146,7 +146,32 @@ function runTests() {
   assertEquals(startResult.gameState.turn.playerId, 'p1', 'First player is active');
   assertEquals(startResult.gameState.turn.dice.length, 6, 'Turn has 6 dice');
   assertEquals(startResult.gameState.turn.accumulatedTurnScore, 0, 'Turn score starts at 0');
-  assertEquals(startResult.gameState.turn.status, 'awaiting_selection', 'Status is awaiting_selection');
+  const initialSelection = startResult.gameState.turn.selection;
+  if (initialSelection.selectedIndices.length > 0) {
+    assert(initialSelection.isValid, 'Auto selection is valid when dice score');
+    assert(initialSelection.selectionScore > 0, 'Auto selection has positive score when present');
+    assertEquals(startResult.gameState.turn.status, 'awaiting_roll', 'Status is awaiting_roll when auto selection exists');
+  } else {
+    assert(!initialSelection.isValid, 'Empty auto selection marked invalid');
+    assertEquals(initialSelection.selectionScore, 0, 'Empty auto selection scores zero');
+    assertEquals(startResult.gameState.turn.status, 'awaiting_selection', 'Status is awaiting_selection when no scoring dice');
+  }
+
+  withMockedRandomInts([1, 5, 2, 2, 2, 3], () => {
+    const seededGame = createNewGame();
+    const seededAddOne = addPlayer(seededGame, createPlayerState('s1', 'Seeded Alice'));
+    assert(seededAddOne.success, 'Seeded add player one succeeds');
+    const seededAddTwo = addPlayer(seededAddOne.gameState, createPlayerState('s2', 'Seeded Bob'));
+    assert(seededAddTwo.success, 'Seeded add player two succeeds');
+    const seededStart = startGame(seededAddTwo.gameState);
+    assert(seededStart.success, 'Seeded startGame succeeds');
+    const autoSelection = seededStart.gameState.turn.selection;
+    assertEquals(autoSelection.selectedIndices.length, 5, 'Auto selection picks maximum scoring dice');
+    assert(autoSelection.isValid, 'Seeded auto selection is valid');
+    assertEquals(seededStart.gameState.turn.status, 'awaiting_roll', 'Seeded auto selection sets awaiting_roll');
+    assertEquals(autoSelection.selectionScore, 350, 'Seeded auto selection scores expected total');
+    assertEquals(autoSelection.selectedIndices.join(','), '0,1,2,3,4', 'Auto selection targets expected dice indices');
+  });
 
   // Test error cases
   const noPlayersResult = startGame(createNewGame());
@@ -186,8 +211,13 @@ function runTests() {
   assertEquals(turnState.playerId, 'p1', 'Turn has correct player ID');
   assertEquals(turnState.dice.length, 4, 'Turn has correct dice count');
   assertEquals(turnState.accumulatedTurnScore, 250, 'Turn has accumulated score');
-  assertEquals(turnState.status, 'awaiting_selection', 'Turn status is awaiting_selection');
-  assertEquals(turnState.selection.selectedIndices.length, 0, 'Selection starts empty');
+  if (turnState.selection.selectedIndices.length > 0) {
+    assert(turnState.selection.isValid, 'Initialized selection is valid when present');
+    assert(turnState.selection.selectionScore > 0, 'Initialized selection has positive score');
+    assertEquals(turnState.status, 'awaiting_roll', 'Turn status is awaiting_roll when selection exists');
+  } else {
+    assertEquals(turnState.status, 'awaiting_selection', 'Turn status is awaiting_selection when no scoring dice');
+  }
 
   try {
     initializeTurnState('p1', [], 0);
@@ -324,8 +354,11 @@ function runTests() {
     assertEquals(rollResult.gameState.turn.accumulatedTurnScore, 100, 'Accumulated score increases by selection');
     assertEquals(rollResult.gameState.turn.dice.length, 3, 'Dice count unchanged when not hot dice');
     assert(!rollResult.gameState.turn.dice[0].selectable, 'Selected die locks after roll');
-    assertEquals(rollResult.gameState.turn.selection.selectedIndices.length, 0, 'Selection resets after roll');
-    assertEquals(rollResult.gameState.turn.status, 'awaiting_selection', 'Status resets to awaiting_selection');
+    const postRollSelection = rollResult.gameState.turn.selection;
+    assertEquals(postRollSelection.selectedIndices.join(','), '1,2', 'Auto selection highlights scoring dice after roll');
+    assert(postRollSelection.isValid, 'Post-roll auto selection is valid');
+    assertEquals(postRollSelection.selectionScore, 100, 'Post-roll auto selection scores expected total');
+    assertEquals(rollResult.gameState.turn.status, 'awaiting_roll', 'Status advances to awaiting_roll after auto selection');
   });
 
   const hotDicePlayers = [
@@ -363,7 +396,11 @@ function runTests() {
     assertEquals(hotResult.gameState.turn.dice.length, 6, 'Hot dice resets to six dice');
     assert(hotResult.gameState.turn.dice.every(d => d.selectable), 'All dice selectable after hot dice');
     assertEquals(hotResult.gameState.turn.accumulatedTurnScore, 1400, 'Accumulated score adds selection before hot dice reroll');
-    assertEquals(hotResult.gameState.turn.selection.selectedIndices.length, 0, 'Selection cleared after hot dice roll');
+    const hotSelection = hotResult.gameState.turn.selection;
+    assertEquals(hotSelection.selectedIndices.length, 6, 'Hot dice auto-selects all scoring dice');
+    assert(hotSelection.isValid, 'Hot dice auto selection is valid');
+    assertEquals(hotSelection.selectionScore, 4000, 'Hot dice auto selection scores full six-of-a-kind');
+    assertEquals(hotResult.gameState.turn.status, 'awaiting_roll', 'Status is awaiting_roll after hot dice auto selection');
   });
 
   const bustPlayers = [
