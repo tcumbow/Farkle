@@ -180,6 +180,11 @@ Recommended scoring algorithm:
 4. Apply remaining single 1s and 5s
 5. Validate all selected dice were consumed
 
+Auto-selection helper:
+- The server uses a helper to derive a default selection from the current roll that maximizes the valid score.
+- Strategy: prefer special combos (straight, three pairs, two triplets), then n-of-a-kind, then remaining 1s and 5s.
+- Resulting selection must be valid (no non-scoring dice included).
+
 ---
 
 ## 16. Authoritative Reference

@@ -42,6 +42,11 @@ This walkthrough assumes compliance with:
 **Client behavior:**
 - TV displays active player and dice
 - Phone client enables dice toggling
+
+**Server auto-selection:**
+- Immediately after initializing dice, the server computes the largest valid scoring selection (if any) and applies it.
+- If a valid selection exists, `selection` is populated and `status` transitions to `awaiting_roll`.
+- If no valid selection exists, `selection` remains empty and `status` stays `awaiting_selection`.
 - Roll/Bank disabled
 
 ---
@@ -92,7 +97,7 @@ This walkthrough assumes compliance with:
 2. Lock selected dice
 3. Roll remaining dice
 4. Clear selection
-5. Evaluate new roll
+5. Evaluate new roll and apply auto-selection default
 ```
 
 ### 3.1 Bust Check
@@ -124,7 +129,8 @@ This walkthrough assumes compliance with:
 
 ```text
 - Update TurnState.dice
-- TurnState.status = 'awaiting_selection'
+- Compute and apply auto-selection for the new roll
+- If a valid selection exists, status = 'awaiting_roll'; otherwise 'awaiting_selection'
 - Broadcast game_state
 ```
 
@@ -154,7 +160,7 @@ This walkthrough assumes compliance with:
   dice: rollSixDice(),
   accumulatedTurnScore: <preserved>,
   selection: empty,
-  status: 'awaiting_selection'
+  status: 'awaiting_selection' (then auto-selection applied; may transition to 'awaiting_roll')
 }
 ```
 
@@ -273,6 +279,7 @@ START TURN
 ROLL (initial)
   ↓
 SELECT DICE
+AUTO-SELECTION (if any) → SELECT DICE
   ↓
 ROLL ──► BUST ──► NEXT PLAYER
   ↓

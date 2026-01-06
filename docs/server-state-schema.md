@@ -127,6 +127,10 @@ DiceSelectionState = {
 - `isValid === false` disables roll/bank
 - `selectionScore` is computed live
 
+Auto-selection semantics:
+- On turn start and after each roll, the server may auto-populate `selectedIndices` with the largest valid scoring subset of the current selectable dice.
+- When auto-selection is present and valid, `status` is set to `awaiting_roll`; otherwise it remains `awaiting_selection`.
+
 ---
 
 ## 8. EventLogEntry (Debug Only)

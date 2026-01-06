@@ -40,6 +40,9 @@ This is a personal project optimized for simplicity, debuggability, and fidelity
 - Serves TV client from `/` and phone client from `/join`
 - Health check exposed at `/healthz`
 - Optional event log available at `/api/event-log` when `EVENT_LOG_ENABLED=true`
+ - Server listens on `0.0.0.0` to accept LAN connections
+ - TV client fetches LAN join info from `/api/server-info` and renders QR code using `http://<host>:<port>/join?gameId=...`
+ - `SERVER_HOST` env var overrides auto-detected LAN IP if needed
 
 ### Clients
 - TV client: full-screen HTML/CSS/JS (Edge Chromium)
@@ -56,9 +59,11 @@ This is a personal project optimized for simplicity, debuggability, and fidelity
   - Game state (scores, turns, dice, selections)
   - Final results
 - Displays QR code for joining during lobby
+ - Uses server-reported LAN IP/port for join URL; falls back to window origin if unavailable
 - Contains the **Start New Game** button
 - After game start, performs no gameplay actions
 - Shows private player state (dice selections) in real time
+ - Animates dice when new rolls arrive to signal change
 
 ### Phone Client
 
@@ -155,6 +160,11 @@ Examples of illegal actions:
 - Server continuously re-validates selection
 - Roll/Bank buttons are disabled unless selection is valid
 - Selection is only committed when Roll or Bank is invoked
+
+Auto-selection default:
+- On turn start and after each roll, the server computes and applies the largest valid scoring selection by default.
+- If a valid selection exists, `status` becomes `awaiting_roll` and clients highlight the auto-selected dice.
+- If no valid selection exists, `status` remains `awaiting_selection` and no dice are selected.
 
 Invalid selections:
 - Allowed visually

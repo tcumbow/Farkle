@@ -72,6 +72,9 @@ Sent when:
 - Any meaningful state change occurs
 - TV client reloads
 
+Notes:
+- Includes `TurnState.selection` reflecting server-applied auto-selection (if any).
+
 This is the *only* event clients use to render state.
 
 ---
