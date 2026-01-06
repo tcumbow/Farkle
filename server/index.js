@@ -1,5 +1,6 @@
 const path = require('path');
 const http = require('http');
+const os = require('os');
 const express = require('express');
 const { Server } = require('socket.io');
 
@@ -8,6 +9,27 @@ const { registerSocketHandlers } = require('./socketHandlers');
 
 const DEFAULT_PORT = 3000;
 const STATIC_MAX_AGE = process.env.NODE_ENV === 'production' ? '1h' : 0;
+
+function getServerHost() {
+  // Allow manual override via environment variable
+  if (process.env.SERVER_HOST) {
+    return process.env.SERVER_HOST;
+  }
+
+  // Attempt to detect LAN IP automatically
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      // Skip internal (loopback) and non-IPv4 addresses
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+
+  // Fallback to localhost if no LAN IP found
+  return '127.0.0.1';
+}
 
 function createServer() {
   const port = Number.parseInt(process.env.PORT, 10) || DEFAULT_PORT;
@@ -45,6 +67,13 @@ function createServer() {
     res.json({ eventLog: serverState.eventLog });
   });
 
+  app.get('/api/server-info', (req, res) => {
+    res.json({
+      host: getServerHost(),
+      port
+    });
+  });
+
   app.use(
     '/join',
     express.static(phoneClientPath, {
@@ -61,9 +90,12 @@ function createServer() {
     })
   );
 
-  httpServer.listen(port, () => {
+  httpServer.listen(port, '0.0.0.0', () => {
+    const serverHost = getServerHost();
     // eslint-disable-next-line no-console
-    console.log('[farkle] server listening on port', port);
+    console.log('[farkle] server listening on 0.0.0.0:', port);
+    // eslint-disable-next-line no-console
+    console.log('[farkle] join URL:', `http://${serverHost}:${port}/join`);
     // eslint-disable-next-line no-console
     console.log(eventLogEnabled ? '[farkle] event log enabled' : '[farkle] event log disabled');
   });

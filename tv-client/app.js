@@ -26,8 +26,26 @@
   let qrInstance = null;
   let latestGameState = null;
   let lastTurnDiceSignature = null;
+  let serverHost = null;
+  let serverPort = null;
 
   const socket = io({ transports: ['websocket'] });
+
+  // Fetch server info on page load
+  fetch('/api/server-info')
+    .then(res => res.json())
+    .then(info => {
+      serverHost = info.host;
+      serverPort = info.port;
+      // Re-render QR if we're in lobby
+      if (latestGameState && latestGameState.phase === 'lobby') {
+        updateQr(latestGameState);
+      }
+    })
+    .catch(err => {
+      console.error('Failed to fetch server info:', err);
+      // Fallback to window.location if fetch fails
+    });
 
   startButton.addEventListener('click', () => {
     if (socket.connected) {
@@ -311,6 +329,10 @@
   }
 
   function buildJoinUrl(gameId) {
+    // Use server-provided host/port if available, otherwise fallback to window.location
+    if (serverHost && serverPort) {
+      return `http://${serverHost}:${serverPort}/join?gameId=${encodeURIComponent(gameId)}`;
+    }
     const origin = window.location.origin;
     return `${origin}/join?gameId=${encodeURIComponent(gameId)}`;
   }
