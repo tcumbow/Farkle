@@ -93,8 +93,10 @@ body {
   cursor: not-allowed;
 }
 
-#join-button:not(:disabled):hover {
-  background: #1f4fa3;
+@media (hover: hover) {
+  #join-button:not(:disabled):hover {
+    background: #1f4fa3;
+  }
 }
 
 .status {
@@ -155,8 +157,10 @@ body {
   cursor: not-allowed;
 }
 
-#leave-button:not(:disabled):hover {
-  background: rgba(255, 255, 255, 0.08);
+@media (hover: hover) {
+  #leave-button:not(:disabled):hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
 }
 
 .turn-header {
@@ -216,8 +220,10 @@ body {
   border-color: rgba(74, 144, 226, 0.6);
 }
 
-.die.selectable:hover {
-  transform: translateY(-2px);
+@media (hover: hover) {
+  .die.selectable:hover {
+    transform: translateY(-2px);
+  }
 }
 
 .die.selected {
@@ -276,8 +282,10 @@ body {
   cursor: not-allowed;
 }
 
-.actions button:not(:disabled):hover {
-  background: #1f4fa3;
+@media (hover: hover) {
+  .actions button:not(:disabled):hover {
+    background: #1f4fa3;
+  }
 }
 
 .hint {
