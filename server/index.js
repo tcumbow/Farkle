@@ -16,9 +16,17 @@ function getServerHost() {
     return process.env.SERVER_HOST;
   }
 
+  // Known virtual/non-physical network interface patterns to skip
+  const virtualPatterns = /vmware|virtualbox|vbox|hyper-v|hyperv|vswitch|docker|vnet/i;
+
   // Attempt to detect LAN IP automatically
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
+    // Skip known virtual interfaces
+    if (virtualPatterns.test(name)) {
+      continue;
+    }
+
     for (const iface of interfaces[name]) {
       // Skip internal (loopback) and non-IPv4 addresses
       if (iface.family === 'IPv4' && !iface.internal) {
