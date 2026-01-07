@@ -421,6 +421,27 @@
     const selection = turn.selection || { isValid: false, selectedIndices: [], selectionScore: 0 };
     const hasSelection = Array.isArray(selection.selectedIndices) && selection.selectedIndices.length > 0;
 
+    // Calculate total bank amount
+    const selectionScore = selection.isValid ? selection.selectionScore : 0;
+    const bankTotal = turn.accumulatedTurnScore + selectionScore;
+
+    // Can't bank zero or negative
+    if (bankTotal <= 0) {
+      return false;
+    }
+
+    // Check minimum entry requirement
+    const players = Array.isArray(latestGameState.players) ? latestGameState.players : [];
+    const playerState = players.find(p => p.playerId === identity.playerId);
+    const minimumEntry = latestGameState.config && latestGameState.config.minimumEntryScore 
+      ? latestGameState.config.minimumEntryScore 
+      : 0;
+
+    if (playerState && !playerState.hasEnteredGame && bankTotal < minimumEntry) {
+      return false;
+    }
+
+    // Must have a valid selection or accumulated score
     if (selection.isValid) {
       return true;
     }
