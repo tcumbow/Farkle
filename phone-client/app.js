@@ -316,6 +316,15 @@
     rollButton.disabled = !rollEnabled;
     bankButton.disabled = !bankEnabled;
 
+    // Update bank button text with total amount
+    if (bankEnabled) {
+      const selectionScore = selection.isValid ? selection.selectionScore : 0;
+      const bankTotal = turn.accumulatedTurnScore + selectionScore;
+      bankButton.textContent = `Bank ${bankTotal}`;
+    } else {
+      bankButton.textContent = 'Bank Score';
+    }
+
     turnHintEl.textContent = determineHint(turn.status, selection, turn);
 
     if (!bankEnabled && !rollEnabled) {
