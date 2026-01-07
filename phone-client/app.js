@@ -327,6 +327,10 @@
     
     if (rollEnabled && allSelectableSelected) {
       rollButton.textContent = '"Free" Roll';
+    } else if (rollEnabled) {
+      // Count how many dice will be rolled (selectable dice that are not selected)
+      const diceToRoll = selectableIndices.filter(index => !selectedSet.has(index)).length;
+      rollButton.textContent = `Roll ${diceToRoll} Dice`;
     } else {
       rollButton.textContent = 'Roll Dice';
     }
