@@ -185,18 +185,38 @@ function runTests() {
   console.log('\n--- advanceToNextTurn Tests ---');
   
   const gameInProgress = startResult.gameState;
-  const nextResult = advanceToNextTurn(gameInProgress);
-  
-  assert(nextResult.success, 'Successfully advances turn');
-  assertEquals(nextResult.gameState.activeTurnIndex, 1, 'Turn index advanced to 1');
-  assertEquals(nextResult.gameState.turn.playerId, 'p2', 'Second player is active');
-  assertEquals(nextResult.gameState.turn.dice.length, 6, 'Next turn has 6 dice');
-  assertEquals(nextResult.gameState.turn.accumulatedTurnScore, 0, 'Next turn score starts at 0');
+  withMockedRandomInts([1, 2, 3, 4, 6, 2, 2, 2, 5, 4, 6, 3], () => {
+    const nextResult = advanceToNextTurn(gameInProgress);
+    
+    assert(nextResult.success, 'Successfully advances turn');
+    assertEquals(nextResult.gameState.activeTurnIndex, 1, 'Turn index advanced to 1');
+    assertEquals(nextResult.gameState.turn.playerId, 'p2', 'Second player is active');
+    assertEquals(nextResult.gameState.turn.dice.length, 6, 'Next turn has 6 dice');
+    assertEquals(nextResult.gameState.turn.accumulatedTurnScore, 0, 'Next turn score starts at 0');
 
-  // Advance again to wrap around
-  const wrapResult = advanceToNextTurn(nextResult.gameState);
-  assertEquals(wrapResult.gameState.activeTurnIndex, 0, 'Turn index wraps to 0');
-  assertEquals(wrapResult.gameState.turn.playerId, 'p1', 'First player is active again');
+    // Advance again to wrap around
+    const wrapResult = advanceToNextTurn(nextResult.gameState);
+    assertEquals(wrapResult.gameState.activeTurnIndex, 0, 'Turn index wraps to 0');
+    assertEquals(wrapResult.gameState.turn.playerId, 'p1', 'First player is active again');
+  });
+  
+    // Immediate bust on first roll should advance to next player automatically
+    const bustStartPlayers = [makePlayer('b1', 'Busty'), makePlayer('b2', 'Next')];
+    const bustStartGame = {
+      phase: 'lobby',
+      config: { minimumEntryScore: 0, targetScore: 10000 },
+      players: bustStartPlayers,
+      turnOrder: ['b1', 'b2'],
+      activeTurnIndex: 0,
+      turn: null
+    };
+
+    withMockedRandomInts([2, 3, 4, 6, 2, 3, 1, 2, 3, 4, 6, 2], () => {
+      const startBust = startGame(bustStartGame);
+      assert(startBust.success, 'Start game succeeds even when initial roll is a bust');
+      assertEquals(startBust.outcome, 'bust', 'Bust outcome returned from startGame');
+      assertEquals(startBust.gameState.activeTurnIndex, 1, 'Turn moves to next player after immediate bust');
+    });
 
   // Test error case
   const lobbyAdvanceResult = advanceToNextTurn(createNewGame());

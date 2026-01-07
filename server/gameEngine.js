@@ -144,6 +144,49 @@ function removeFromRemaining(finalRound, playerId) {
   };
 }
 
+function handleImmediateBust(gameState) {
+  if (!gameState || gameState.phase !== 'in_progress' || !gameState.turn) {
+    return { bust: false, gameState };
+  }
+
+  const selectableValues = (gameState.turn.dice || [])
+    .filter(d => d.selectable)
+    .map(d => d.value);
+
+  if (selectableValues.length === 0) {
+    return { bust: false, gameState };
+  }
+
+  if (!isBust(selectableValues)) {
+    return { bust: false, gameState };
+  }
+
+  const finalRound = normalizeFinalRound(gameState);
+  const updatedFinalRound = removeFromRemaining(finalRound, gameState.turn.playerId);
+
+  const clearedGame = {
+    ...gameState,
+    turn: null,
+    players: clonePlayers(gameState.players),
+    finalRound: updatedFinalRound
+  };
+
+  if (updatedFinalRound.active && updatedFinalRound.remainingPlayerIds.length === 0) {
+    const finished = finishGame(clearedGame);
+    if (!finished.success) {
+      return { bust: true, gameState: gameState, error: finished.error || 'FINISH_FAILED' };
+    }
+    return { bust: true, gameState: finished.gameState };
+  }
+
+  const advanceResult = advanceToNextTurn(clearedGame);
+  if (!advanceResult.success) {
+    return { bust: true, gameState, error: advanceResult.error || 'ADVANCE_FAILED' };
+  }
+
+  return { bust: true, gameState: advanceResult.gameState };
+}
+
 function computeDefaultSelection(dice) {
   if (!Array.isArray(dice) || dice.length === 0) {
     return { indices: [], evaluation: { isValid: false, selectionScore: 0 } };
@@ -276,6 +319,14 @@ function startGame(gameState) {
     })
   };
 
+  const bustCheck = handleImmediateBust(newGameState);
+  if (bustCheck.bust) {
+    if (bustCheck.error) {
+      return { success: false, error: bustCheck.error };
+    }
+    return { success: true, gameState: bustCheck.gameState, outcome: 'bust' };
+  }
+
   return { success: true, gameState: newGameState };
 }
 
@@ -320,6 +371,14 @@ function advanceToNextTurn(gameState) {
       status: 'awaiting_selection'
     })
   };
+
+  const bustCheck = handleImmediateBust(newGameState);
+  if (bustCheck.bust) {
+    if (bustCheck.error) {
+      return { success: false, error: bustCheck.error };
+    }
+    return { success: true, gameState: bustCheck.gameState, outcome: 'bust' };
+  }
 
   return { success: true, gameState: newGameState };
 }
