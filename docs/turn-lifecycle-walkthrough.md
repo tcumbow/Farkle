@@ -241,15 +241,16 @@ Turn resumes immediately upon successful reconnection.
 ## 8. Game End Detection
 
 **Trigger:**
-- A player reaches or exceeds the win condition (e.g., first to 10,000)
+- A player banks to reach or exceed the target score (default 10,000)
+- Final round begins: every other player receives exactly one final turn to try to beat that score
+- Game ends after the last remaining player completes their final turn
 
 **Server actions:**
 
 ```text
-- Complete current turn
-- Set phase = 'finished'
-- finishedAt timestamp set
-- Reject further gameplay actions
+- When trigger occurs: mark final round active, track remaining players who need a final turn
+- After each subsequent turn in the final round, remove that player from the remaining list
+- When no remaining players are left, set phase = 'finished', finishedAt timestamp set, reject further actions
 ```
 
 **Client behavior:**

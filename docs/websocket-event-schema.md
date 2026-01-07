@@ -74,6 +74,7 @@ Sent when:
 
 Notes:
 - Includes `TurnState.selection` reflecting server-applied auto-selection (if any).
+- Includes `finalRound` state (`active`, `triggeringPlayerId`, `remainingPlayerIds`) when the target score has been reached.
 
 This is the *only* event clients use to render state.
 

@@ -37,7 +37,9 @@ GameState = {
   turn: TurnState | null,
 
   createdAt: number,        // timestamp
-  finishedAt: number | null
+  finishedAt: number | null,
+
+  finalRound: FinalRoundState
 }
 ```
 
@@ -47,7 +49,8 @@ GameState = {
 
 ```js
 GameConfig = {
-  minimumEntryScore: number // default 500
+  minimumEntryScore: number, // default 500
+  targetScore: number        // default 10,000
 }
 ```
 
@@ -130,6 +133,22 @@ DiceSelectionState = {
 Auto-selection semantics:
 - On turn start and after each roll, the server may auto-populate `selectedIndices` with the largest valid scoring subset of the current selectable dice.
 - When auto-selection is present and valid, `status` is set to `awaiting_roll`; otherwise it remains `awaiting_selection`.
+
+---
+
+## 9. FinalRoundState
+
+```js
+FinalRoundState = {
+  active: boolean,
+  triggeringPlayerId: string | null,
+  remainingPlayerIds: string[]
+}
+```
+
+- `active === true` after a player reaches or exceeds `config.targetScore` when banking
+- `triggeringPlayerId` is the player who first crossed the target score
+- `remainingPlayerIds` tracks which players still need one final turn; the game finishes after this list is exhausted
 
 ---
 

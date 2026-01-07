@@ -568,6 +568,96 @@ function runTests() {
   assert(!invalidSelectionResult.success, 'bankTurnScore rejects invalid selection with dice selected');
   assertEquals(invalidSelectionResult.error, 'INVALID_SELECTION', 'Invalid selection error code returned');
 
+  // === Win Condition / Final Round Tests ===
+  console.log('\n--- Win Condition / Final Round Tests ---');
+
+  // Single-player immediate finish when target reached
+  const soloPlayer = [makePlayer('solo', 'Solo', { totalScore: 9950, hasEnteredGame: true })];
+  const soloState = {
+    phase: 'in_progress',
+    config: { minimumEntryScore: 0, targetScore: 10000 },
+    players: soloPlayer,
+    turnOrder: ['solo'],
+    activeTurnIndex: 0,
+    turn: {
+      playerId: 'solo',
+      dice: [{ value: 1, selectable: true }],
+      accumulatedTurnScore: 0,
+      selection: {
+        selectedIndices: [0],
+        isValid: true,
+        selectionScore: 100
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  const soloFinish = bankTurnScore(soloState);
+  assert(soloFinish.success, 'Solo player bank succeeds');
+  assertEquals(soloFinish.gameState.phase, 'finished', 'Game finishes immediately when single player reaches target');
+  assertEquals(soloFinish.gameState.turn, null, 'Turn cleared on finish');
+
+  // Two-player final round path: p1 triggers target, p2 gets one last turn then finish
+  const finalPlayers = [
+    makePlayer('fp1', 'Finalist', { totalScore: 9000, hasEnteredGame: true }),
+    makePlayer('fp2', 'Challenger', { totalScore: 8500, hasEnteredGame: true })
+  ];
+
+  const finalStateStart = {
+    phase: 'in_progress',
+    config: { minimumEntryScore: 0, targetScore: 9500 },
+    players: finalPlayers,
+    turnOrder: ['fp1', 'fp2'],
+    activeTurnIndex: 0,
+    turn: {
+      playerId: 'fp1',
+      dice: [
+        { value: 1, selectable: true },
+        { value: 1, selectable: true },
+        { value: 1, selectable: true }
+      ],
+      accumulatedTurnScore: 0,
+      selection: {
+        selectedIndices: [0, 1, 2],
+        isValid: true,
+        selectionScore: 1000
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  const triggerFinal = bankTurnScore(finalStateStart);
+  assert(triggerFinal.success, 'Triggering bank succeeds');
+  assertEquals(triggerFinal.gameState.phase, 'in_progress', 'Game stays in progress during final round');
+  assert(triggerFinal.gameState.finalRound.active, 'Final round is active');
+  assertEquals(triggerFinal.gameState.finalRound.triggeringPlayerId, 'fp1', 'Final round notes triggering player');
+  assert(triggerFinal.gameState.finalRound.remainingPlayerIds.includes('fp2'), 'Challenger has remaining final turn');
+  assertEquals(triggerFinal.gameState.activeTurnIndex, 1, 'Active turn passes to next player');
+
+  const challengerTurn = {
+    ...triggerFinal.gameState,
+    turn: {
+      playerId: 'fp2',
+      dice: [
+        { value: 5, selectable: true },
+        { value: 2, selectable: true },
+        { value: 3, selectable: true }
+      ],
+      accumulatedTurnScore: 0,
+      selection: {
+        selectedIndices: [0],
+        isValid: true,
+        selectionScore: 50
+      },
+      status: 'awaiting_roll'
+    }
+  };
+
+  const finalBank = bankTurnScore(challengerTurn);
+  assert(finalBank.success, 'Final challenger bank succeeds');
+  assertEquals(finalBank.gameState.phase, 'finished', 'Game finishes after last required final-round turn');
+  assertEquals(finalBank.gameState.turn, null, 'Turn cleared on finish after final round');
+
   // === Randomness Test ===
   console.log('\n--- Randomness Tests ---');
   

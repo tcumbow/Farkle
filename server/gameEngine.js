@@ -112,6 +112,38 @@ function evaluateSelection(dice, selectedIndices) {
   return { isValid: true, selectionScore: result.score };
 }
 
+function defaultFinalRoundState() {
+  return {
+    active: false,
+    triggeringPlayerId: null,
+    remainingPlayerIds: []
+  };
+}
+
+function getTargetScore(gameState) {
+  return gameState && gameState.config && typeof gameState.config.targetScore === 'number'
+    ? gameState.config.targetScore
+    : 10000;
+}
+
+function normalizeFinalRound(gameState) {
+  if (gameState && gameState.finalRound) {
+    return gameState.finalRound;
+  }
+  return defaultFinalRoundState();
+}
+
+function removeFromRemaining(finalRound, playerId) {
+  if (!finalRound.active) {
+    return finalRound;
+  }
+  const remaining = finalRound.remainingPlayerIds.filter(id => id !== playerId);
+  return {
+    ...finalRound,
+    remainingPlayerIds: remaining
+  };
+}
+
 function computeDefaultSelection(dice) {
   if (!Array.isArray(dice) || dice.length === 0) {
     return { indices: [], evaluation: { isValid: false, selectionScore: 0 } };
@@ -230,6 +262,7 @@ function startGame(gameState) {
     ...gameState,
     phase: 'in_progress',
     activeTurnIndex: 0,
+    finalRound: normalizeFinalRound(gameState),
     turn: applyDefaultSelectionToTurn({
       playerId: gameState.turnOrder[0],
       dice: initialDice,
@@ -274,6 +307,7 @@ function advanceToNextTurn(gameState) {
   const newGameState = {
     ...gameState,
     activeTurnIndex: nextIndex,
+    finalRound: normalizeFinalRound(gameState),
     turn: applyDefaultSelectionToTurn({
       playerId: nextPlayerId,
       dice: nextPlayerDice,
@@ -395,11 +429,21 @@ function rollTurnDice(gameState) {
 
   const busted = rolledValues.length > 0 && isBust(rolledValues);
   if (busted) {
+    const finalRound = normalizeFinalRound(gameState);
+    const updatedFinalRound = removeFromRemaining(finalRound, turn.playerId);
+
     const clearedGame = {
       ...gameState,
       players: clonePlayers(gameState.players),
-      turn: null
+      turn: null,
+      finalRound: updatedFinalRound
     };
+
+    if (updatedFinalRound.active && updatedFinalRound.remainingPlayerIds.length === 0) {
+      const finished = finishGame(clearedGame);
+      return finished.success ? { success: true, gameState: finished.gameState, outcome: 'bust' } : { success: false, error: finished.error || 'FINISH_FAILED' };
+    }
+
     const advanceResult = advanceToNextTurn(clearedGame);
     if (!advanceResult.success) {
       return { success: false, error: advanceResult.error || 'ADVANCE_FAILED' };
@@ -457,6 +501,13 @@ function bankTurnScore(gameState) {
   const selectionScore = turn.selection.isValid ? turn.selection.selectionScore : 0;
   const bankTotal = turn.accumulatedTurnScore + selectionScore;
 
+  const targetScore = getTargetScore(gameState);
+  let finalRound = normalizeFinalRound(gameState);
+
+  if (finalRound.active) {
+    finalRound = removeFromRemaining(finalRound, playerId);
+  }
+
   if (bankTotal <= 0) {
     return { success: false, error: 'BANK_ZERO' };
   }
@@ -475,11 +526,40 @@ function bankTurnScore(gameState) {
     hasEnteredGame: player.hasEnteredGame || bankTotal >= minimumEntry
   };
 
+  if (!finalRound.active && newTotal >= targetScore) {
+    const remaining = gameState.turnOrder.filter(id => id !== playerId);
+    if (remaining.length === 0) {
+      const finished = finishGame({
+        ...gameState,
+        players: playersCopy,
+        turn: null,
+        finalRound: {
+          active: true,
+          triggeringPlayerId: playerId,
+          remainingPlayerIds: []
+        }
+      });
+      return finished.success ? { success: true, gameState: finished.gameState } : { success: false, error: finished.error || 'FINISH_FAILED' };
+    }
+
+    finalRound = {
+      active: true,
+      triggeringPlayerId: playerId,
+      remainingPlayerIds: remaining
+    };
+  }
+
   const interimGameState = {
     ...gameState,
     players: playersCopy,
-    turn: null
+    turn: null,
+    finalRound
   };
+
+  if (finalRound.active && finalRound.remainingPlayerIds.length === 0) {
+    const finished = finishGame(interimGameState);
+    return finished.success ? { success: true, gameState: finished.gameState } : { success: false, error: finished.error || 'FINISH_FAILED' };
+  }
 
   const advanceResult = advanceToNextTurn(interimGameState);
   if (!advanceResult.success) {

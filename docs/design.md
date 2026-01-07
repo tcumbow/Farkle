@@ -85,6 +85,10 @@ This is a personal project optimized for simplicity, debuggability, and fidelity
   - Default: 500
   - Adjustable on TV client before game start
   - Applies once per player: their first successful bank in a game must meet or exceed this threshold in a single turn; afterwards they may bank any positive score
+- Target score / end condition:
+  - Default target score: 10,000
+  - When a player reaches or exceeds the target, a **final round** begins: every other player gets one last turn to beat that score
+  - After all remaining players complete that final turn, the game ends and the highest total wins
 - Hot dice:
   - Dice pool resets to 6
   - Accumulated turn score preserved
@@ -214,6 +218,12 @@ If game starts mid-join, half-joined players are dropped.
 - Final scores displayed on TV
 - Server rejects all phone actions
 - Phone clients may be disconnected
+- Trigger: A player banks to reach or exceed the target score (default 10,000)
+- Final round: Every other player receives one final turn
+- Completion: After all remaining players finish their final turn, the game ends and highest score wins
+- Final scores displayed on TV
+- Server rejects all phone actions
+- Only **Start New Game** is available
 - Only **Start New Game** is available
 
 New game always starts from scratch; all players must rejoin.

@@ -27,7 +27,7 @@ function initializeServerState(eventLogEnabled = false) {
  * @param {number} minimumEntryScore - Minimum score required to enter the game (default 500)
  * @returns {GameState} New game state ready for players to join
  */
-function createNewGame(minimumEntryScore = 500) {
+function createNewGame(minimumEntryScore = 500, targetScore = 10000) {
   const gameId = crypto.randomBytes(8).toString('hex');
   const now = Date.now();
 
@@ -36,7 +36,8 @@ function createNewGame(minimumEntryScore = 500) {
     phase: 'lobby',
     
     config: {
-      minimumEntryScore
+      minimumEntryScore,
+      targetScore
     },
     
     players: [],
@@ -44,6 +45,11 @@ function createNewGame(minimumEntryScore = 500) {
     activeTurnIndex: 0,
     
     turn: null,
+    finalRound: {
+      active: false,
+      triggeringPlayerId: null,
+      remainingPlayerIds: []
+    },
     
     createdAt: now,
     finishedAt: null
@@ -128,8 +134,8 @@ function createEmptySelection() {
  * @param {number} minimumEntryScore - Minimum entry score for the new game (default 500)
  * @returns {ServerState} Reset server state with new game in lobby phase
  */
-function resetServerState(serverState, minimumEntryScore = 500) {
-  serverState.game = createNewGame(minimumEntryScore);
+function resetServerState(serverState, minimumEntryScore = 500, targetScore = 10000) {
+  serverState.game = createNewGame(minimumEntryScore, targetScore);
   serverState.eventLog = [];
   return serverState;
 }

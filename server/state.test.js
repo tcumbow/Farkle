@@ -75,10 +75,13 @@ function runTests() {
   const game = createNewGame();
   assertNotNull(game.gameId, 'Game should have an ID');
   assertEquals(game.phase, 'lobby', 'New game should be in lobby phase');
-  assertEquals(game.config.minimumEntryScore, 500, 'Default minimum entry score is 500');
+    assertEquals(game.config.minimumEntryScore, 500, 'Default minimum entry score is 500');
+    assertEquals(game.config.targetScore, 10000, 'Default target score is 10000');
   assert(Array.isArray(game.players), 'Players should be an array');
   assertEquals(game.players.length, 0, 'New game has no players');
-  assert(Array.isArray(game.turnOrder), 'TurnOrder should be an array');
+    const customGameWithTargets = createNewGame(1000, 12000);
+    assertEquals(customGameWithTargets.config.minimumEntryScore, 1000, 'Custom minimum entry score');
+    assertEquals(customGameWithTargets.config.targetScore, 12000, 'Custom target score');
   assertEquals(game.turnOrder.length, 0, 'TurnOrder starts empty');
   assertEquals(game.activeTurnIndex, 0, 'ActiveTurnIndex starts at 0');
   assertEquals(game.turn, null, 'Turn should be null in lobby');
@@ -145,8 +148,9 @@ function runTests() {
   assertEquals(state1.eventLog.length, 0, 'Event log cleared after reset');
 
   const state2 = initializeServerState();
-  resetServerState(state2, 750);
+    resetServerState(state2, 750, 15000);
   assertEquals(state2.game.config.minimumEntryScore, 750, 'Can set custom minimum on reset');
+    assertEquals(state2.game.config.targetScore, 15000, 'Reset applies new target score');
 
   // === clearGame Tests ===
   console.log('\n--- clearGame Tests ---');
