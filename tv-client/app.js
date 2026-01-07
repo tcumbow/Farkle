@@ -9,6 +9,7 @@
   const qrSection = document.getElementById('qr-section');
   const qrCanvas = document.getElementById('join-qr');
   const joinUrlEl = document.getElementById('join-url');
+  const gameMetadataSection = document.getElementById('game-metadata');
   const lobbyView = document.getElementById('lobby-view');
   const lobbyList = document.getElementById('lobby-players');
   const inProgressView = document.getElementById('in-progress-view');
@@ -119,6 +120,9 @@
     phaseEl.textContent = gameState.phase || 'unknown';
     minimumEntryEl.textContent = gameState.config ? gameState.config.minimumEntryScore : '—';
     playerCountEl.textContent = String(gameState.players ? gameState.players.length : 0);
+
+    const showMetadata = !gameState || gameState.phase !== 'in_progress';
+    toggleElement(gameMetadataSection, showMetadata);
 
     if (gameState.phase === 'lobby') {
       updateQr(gameState);

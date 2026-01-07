@@ -22,6 +22,8 @@
   const rollButton = document.getElementById('roll-button');
   const bankButton = document.getElementById('bank-button');
   const diceContainer = document.getElementById('dice-container');
+  const heroSection = document.querySelector('.hero');
+  const joinCard = document.getElementById('join-card');
 
   const params = new URLSearchParams(window.location.search);
   const gameId = params.get('gameId') || '';
@@ -214,6 +216,7 @@
   function renderGameInfo(gameState) {
     if (!gameState) {
       gameInfoEl.textContent = `Game ID ${gameId}`;
+      updateJoinVisibility(null);
       return;
     }
 
@@ -224,6 +227,17 @@
       text += ' (joining closed)';
     }
     gameInfoEl.textContent = text;
+    updateJoinVisibility(gameState);
+  }
+
+  function updateJoinVisibility(gameState) {
+    const isLobby = !gameState || gameState.phase === 'lobby';
+    if (heroSection) {
+      toggleElement(heroSection, isLobby);
+    }
+    if (joinCard) {
+      toggleElement(joinCard, isLobby);
+    }
   }
 
   function renderTurnState(gameState) {
@@ -583,6 +597,14 @@
   function hideElement(element) {
     if (element) {
       element.classList.add('hidden');
+    }
+  }
+
+  function toggleElement(element, shouldShow) {
+    if (shouldShow) {
+      showElement(element);
+    } else {
+      hideElement(element);
     }
   }
 
