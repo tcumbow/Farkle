@@ -316,6 +316,21 @@
     rollButton.disabled = !rollEnabled;
     bankButton.disabled = !bankEnabled;
 
+    // Update roll button text for "free" roll (hot dice)
+    const dice = turn.dice || [];
+    const selectableIndices = dice
+      .map((die, index) => die.selectable ? index : null)
+      .filter(index => index !== null);
+    const selectedSet = new Set(selectedIndices);
+    const allSelectableSelected = selectableIndices.length > 0 && 
+                                   selectableIndices.every(index => selectedSet.has(index));
+    
+    if (rollEnabled && allSelectableSelected) {
+      rollButton.textContent = '"Free" Roll';
+    } else {
+      rollButton.textContent = 'Roll Dice';
+    }
+
     // Update bank button text with total amount
     if (bankEnabled) {
       const selectionScore = selection.isValid ? selection.selectionScore : 0;
