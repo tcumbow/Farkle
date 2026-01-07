@@ -295,15 +295,17 @@
     turnAccumulatedEl.textContent = `Turn score: ${turn.accumulatedTurnScore}`;
     turnSelectionEl.textContent = `Selection: ${selection.selectionScore} ${selection.isValid ? '(valid)' : '(invalid)'}`;
 
-    renderDice(turn.dice || [], selectedIndices, isActivePlayer);
-
     if (!isActivePlayer) {
+      clearDice();
+      lastDiceSignature = null;
       turnTitle.textContent = `${playerState.name}, hold tight`;
       turnStatusLine.textContent = `${activeName} is taking their turn.`;
       disableActionButtons();
       turnHintEl.textContent = 'Controls will unlock when your turn begins.';
       return;
     }
+
+    renderDice(turn.dice || [], selectedIndices, true);
 
     turnTitle.textContent = `Your turn, ${playerState.name}!`;
     turnStatusLine.textContent = `Status: ${formatTurnStatus(turn.status)}`;
