@@ -538,7 +538,7 @@
     if (!qrInstance) {
       qrInstance = new QRious({
         element: qrCanvas,
-        size: 200,
+        size: 320,
         value: ''
       });
     }
