@@ -163,7 +163,7 @@ function createServer() {
     // eslint-disable-next-line no-console
     console.log('[farkle] server listening on 0.0.0.0:', port);
     // eslint-disable-next-line no-console
-    console.log('[farkle] join URL:', `http://${serverHost}:${port}/join`);
+    console.log('[farkle] TV URL:', `http://${serverHost}:${port}`);
     // eslint-disable-next-line no-console
     console.log(eventLogEnabled ? '[farkle] event log enabled' : '[farkle] event log disabled');
   });
