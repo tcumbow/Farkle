@@ -56,6 +56,7 @@ function createServer() {
 
   const tvClientPath = path.join(__dirname, '..', 'tv-client');
   const phoneClientPath = path.join(__dirname, '..', 'phone-client');
+  const mediaPath = path.join(__dirname, '..', 'media');
 
   app.get('/healthz', (req, res) => {
     try {
@@ -86,6 +87,14 @@ function createServer() {
     '/join',
     express.static(phoneClientPath, {
       index: 'index.html',
+      maxAge: STATIC_MAX_AGE
+    })
+  );
+
+  app.use(
+    '/media',
+    express.static(mediaPath, {
+      index: false,
       maxAge: STATIC_MAX_AGE
     })
   );

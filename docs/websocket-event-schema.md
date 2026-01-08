@@ -98,6 +98,23 @@ Used for:
 
 Errors are primarily diagnostic.
 
+### 3.3 `reaction`
+
+**Direction:** Server → All Clients
+
+```js
+{
+  type: 'bust',
+  mediaUrl: string, // e.g. /media/bust/xyz.webp
+  playerId: string  // player who triggered the reaction
+}
+```
+
+Rules:
+- Sent when the server detects a bust outcome.
+- The same `mediaUrl` is broadcast to all clients so TV and the busting player's phone stay in sync.
+- Clients may ignore reactions while another reaction is active.
+
 ---
 
 ## 4. Lobby Phase Events

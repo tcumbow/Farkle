@@ -6,6 +6,8 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { createPlayerState, findPlayerById, createNewGame, logEvent } = require('./state');
 const {
   startGame: engineStartGame,
@@ -32,6 +34,7 @@ const SOCKET_LIFECYCLE_EVENTS = {
 
 const OUTGOING_EVENTS = {
   GAME_STATE: 'game_state',
+  REACTION: 'reaction',
   ERROR: 'error',
   JOIN_SUCCESS: 'join_success'
 };
@@ -85,6 +88,28 @@ function registerSocketHandlers(io, serverState, options = {}) {
   } = options;
 
   const playerSocketMap = new Map();
+
+  const bustMediaDir = path.join(__dirname, '..', 'media', 'bust');
+  let bustMediaFiles = [];
+  try {
+    bustMediaFiles = fs
+      .readdirSync(bustMediaDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.webm'))
+      .map((entry) => entry.name);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('[socketHandlers] Unable to read bust media directory:', error.message);
+    bustMediaFiles = [];
+  }
+
+  const getRandomBustMediaUrl = () => {
+    if (!bustMediaFiles || bustMediaFiles.length === 0) {
+      return null;
+    }
+    const index = crypto.randomInt(0, bustMediaFiles.length);
+    const filename = bustMediaFiles[index];
+    return `/media/bust/${filename}`;
+  };
 
   const recordEvent = (type, payload = {}) => {
     const entryPayload = { ...payload };
@@ -189,6 +214,13 @@ function registerSocketHandlers(io, serverState, options = {}) {
       return;
     }
     io.emit(OUTGOING_EVENTS.GAME_STATE, serverState.game);
+  };
+
+  const emitReaction = (reaction) => {
+    if (!reaction || !reaction.mediaUrl) {
+      return;
+    }
+    io.emit(OUTGOING_EVENTS.REACTION, reaction);
   };
 
   const emitError = (socket, code, message, context = {}) => {
@@ -403,6 +435,9 @@ function registerSocketHandlers(io, serverState, options = {}) {
     }
 
     const previousPhase = game.phase;
+    const startingPlayerId = Array.isArray(game.turnOrder) && game.turnOrder.length > 0
+      ? game.turnOrder[0]
+      : null;
 
     pruneUnreadyPlayers(game);
 
@@ -429,6 +464,13 @@ function registerSocketHandlers(io, serverState, options = {}) {
       event: INCOMING_EVENTS.START_GAME,
       playerCount: newGameState.players.length
     });
+
+    if (result.outcome === 'bust' && startingPlayerId) {
+      const mediaUrl = getRandomBustMediaUrl();
+      if (mediaUrl) {
+        emitReaction({ type: 'bust', mediaUrl, playerId: startingPlayerId });
+      }
+    }
 
     if (newGameState.turn) {
       const { turn } = newGameState;
@@ -592,6 +634,13 @@ function registerSocketHandlers(io, serverState, options = {}) {
     serverState.game = result.gameState;
     const outcome = result.outcome || 'continue';
     const nextTurn = serverState.game.turn;
+
+    if (outcome === 'bust') {
+      const mediaUrl = getRandomBustMediaUrl();
+      if (mediaUrl) {
+        emitReaction({ type: 'bust', mediaUrl, playerId });
+      }
+    }
 
     recordDiceRoll({
       event: INCOMING_EVENTS.ROLL_DICE,

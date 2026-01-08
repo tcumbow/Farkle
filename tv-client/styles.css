@@ -259,3 +259,29 @@ body {
 .hidden {
   display: none;
 }
+
+.reaction-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 3000;
+}
+
+.reaction-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.reaction-overlay .reaction-media {
+  max-width: 80vw;
+  max-height: 80vh;
+  border-radius: 12px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+  object-fit: contain;
+}

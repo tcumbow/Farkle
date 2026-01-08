@@ -1,4 +1,78 @@
 (() => {
+  class ReactionOverlay {
+    constructor(root = document.body) {
+      this.root = root;
+      this.active = false;
+      this.hideTimer = null;
+
+      this.overlayEl = document.createElement('div');
+      this.overlayEl.className = 'reaction-overlay';
+      this.overlayEl.setAttribute('aria-hidden', 'true');
+
+      this.mediaEl = document.createElement('video');
+      this.mediaEl.className = 'reaction-media';
+      this.mediaEl.playsInline = true;
+      this.mediaEl.autoplay = true;
+      this.mediaEl.muted = true;
+      this.mediaEl.controls = false;
+      this.mediaEl.loop = false;
+      this.overlayEl.appendChild(this.mediaEl);
+
+      this.overlayEl.addEventListener('click', () => this.hide());
+
+      if (this.root && this.root.appendChild) {
+        this.root.appendChild(this.overlayEl);
+      }
+
+      this.handleEnded = () => this.hide();
+      this.handleError = () => this.hide();
+    }
+
+    show(mediaUrl) {
+      if (this.active) {
+        return;
+      }
+      if (!mediaUrl) {
+        return;
+      }
+
+      this.active = true;
+      this.overlayEl.classList.add('visible');
+      this.mediaEl.src = mediaUrl;
+      this.mediaEl.currentTime = 0;
+      this.mediaEl.play().catch(() => {});
+
+      const clearAndHide = () => {
+        if (!this.active) return;
+        this.hide();
+      };
+
+      this.mediaEl.addEventListener('ended', this.handleEnded, { once: true });
+      this.mediaEl.addEventListener('error', this.handleError, { once: true });
+
+      this.mediaEl.onloadedmetadata = () => {
+        const duration = this.mediaEl.duration;
+        const fallback = Number.isFinite(duration) && duration > 0 ? (duration + 0.5) * 1000 : 6000;
+        this.hideTimer = setTimeout(clearAndHide, fallback);
+      };
+    }
+
+    hide() {
+      if (!this.active) {
+        return;
+      }
+      this.active = false;
+      if (this.hideTimer) {
+        clearTimeout(this.hideTimer);
+        this.hideTimer = null;
+      }
+      this.mediaEl.pause();
+      this.mediaEl.removeAttribute('src');
+      this.mediaEl.load();
+      this.overlayEl.classList.remove('visible');
+    }
+  }
+
   const storageKey = 'farkle.phone.identity';
   const nameKey = 'farkle.phone.lastName';
 
@@ -24,6 +98,7 @@
   const diceContainer = document.getElementById('dice-container');
   const heroSection = document.querySelector('.hero');
   const joinCard = document.getElementById('join-card');
+  const reactionOverlay = new ReactionOverlay(document.body);
 
   const params = new URLSearchParams(window.location.search);
   const gameId = params.get('gameId') || '';
@@ -120,6 +195,13 @@
         identityRecognized = false;
       }
       renderTurnState(gameState);
+    });
+
+    socket.on('reaction', payload => {
+      const identity = getIdentity();
+      if (payload && payload.type === 'bust' && payload.mediaUrl && identity && payload.playerId === identity.playerId) {
+        reactionOverlay.show(payload.mediaUrl);
+      }
     });
 
     socket.on('error', payload => {
