@@ -230,7 +230,7 @@ These fields are intentionally omitted but may be added later:
 
 This schema is the authoritative reference for:
 - Game engine logic
-- WebSocket message payloads
+- SSE event and REST API payloads
 - Client rendering logic
 
 Any deviation requires updating this document.

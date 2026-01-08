@@ -31,12 +31,14 @@ This is a personal project optimized for simplicity, debuggability, and fidelity
 ### Server
 - Node.js
 - Express for HTTP/static hosting
-- Socket.IO for WebSocket communication
+- SSE (Server-Sent Events) for server→client real-time updates
+- REST API for client→server actions
 - `crypto.randomInt()` for dice rolls
 
 ### Server Bootstrap
 
-- `server/index.js` creates the HTTP + Socket.IO server
+- `server/index.js` creates the HTTP server
+- `server/sseHandlers.js` manages SSE connections and REST endpoints
 - Serves TV client from `/` and phone client from `/join`
 - Health check exposed at `/healthz`
 - Optional event log available at `/api/event-log` when `EVENT_LOG_ENABLED=true`
@@ -136,9 +138,9 @@ Stored in phone client `localStorage`.
 
 ### Reconnection Flow
 
-- Client reconnects via WebSocket
-- Sends `{ gameId, playerId, playerSecret }`
-- Server reattaches if valid
+- Client establishes SSE connection to `/api/events`
+- Client sends `POST /api/reconnect` with `{ gameId, playerId, playerSecret }`
+- Server validates and marks player as connected
 - Active turn waits indefinitely for reconnection
 
 ---
@@ -248,17 +250,23 @@ New game always starts from scratch; all players must rejoin.
 
 ---
 
-## 16. WebSocket vs REST Usage
+## 16. SSE + REST Architecture
 
-### REST
-- Serve static assets
-- Create game
-- Join game
+### REST (Client → Server)
+- `POST /api/join` - Join game with name
+- `POST /api/reconnect` - Reconnect with saved identity
+- `POST /api/toggle` - Toggle die selection
+- `POST /api/roll` - Roll dice
+- `POST /api/bank` - Bank score
+- `POST /api/start` - Start game (TV only)
+- `POST /api/reset` - Reset game (TV only)
 
-### WebSockets (Socket.IO)
-- State synchronization
-- Player actions
-- Reconnection handling
+### SSE (Server → Client)
+- `GET /api/events` - EventSource stream
+- Events: `game_state`, `reaction`, `error`
+- Automatic reconnection via native EventSource
+
+See `docs/sse-rest-api-schema.md` for full API documentation.
 
 ---
 
@@ -288,7 +296,7 @@ Used for debugging and rule verification.
 
 1. Server state model & game engine
 2. Dice scoring logic + tests
-3. WebSocket message schema
+3. SSE + REST API schema
 4. TV client (lobby + display)
 5. Phone client (join + actions)
 6. Reconnection logic

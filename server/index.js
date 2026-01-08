@@ -2,10 +2,19 @@ const path = require('path');
 const http = require('http');
 const os = require('os');
 const express = require('express');
-const { Server } = require('socket.io');
 
 const { initializeServerState, createNewGame, validateStateInvariants } = require('./state');
-const { registerSocketHandlers } = require('./socketHandlers');
+const {
+  registerSSEClient,
+  handleJoinGame,
+  handleReconnectPlayer,
+  handleToggleDie,
+  handleRollDice,
+  handleBankScore,
+  handleStartGame,
+  handleResetGame,
+  loadBustGifs
+} = require('./sseHandlers');
 
 const DEFAULT_PORT = 3000;
 const STATIC_MAX_AGE = process.env.NODE_ENV === 'production' ? '1h' : 0;
@@ -48,15 +57,16 @@ function createServer() {
 
   const app = express();
   const httpServer = http.createServer(app);
-  const io = new Server(httpServer, {
-    transports: ['websocket']
-  });
 
-  registerSocketHandlers(io, serverState);
+  // Load bust media files for reaction animations
+  const mediaPath = path.join(__dirname, '..', 'media');
+  const bustGifs = loadBustGifs(mediaPath);
+
+  // Enable JSON body parsing for REST endpoints
+  app.use(express.json());
 
   const tvClientPath = path.join(__dirname, '..', 'tv-client');
   const phoneClientPath = path.join(__dirname, '..', 'phone-client');
-  const mediaPath = path.join(__dirname, '..', 'media');
 
   app.get('/healthz', (req, res) => {
     try {
@@ -81,6 +91,47 @@ function createServer() {
       host: getServerHost(),
       port
     });
+  });
+
+  // ========================================================================
+  // SSE Endpoint - Server → Client events
+  // ========================================================================
+  app.get('/api/events', (req, res) => {
+    registerSSEClient(res, req, serverState);
+  });
+
+  // ========================================================================
+  // REST Endpoints - Client → Server actions
+  // ========================================================================
+  
+  // Phone client actions
+  app.post('/api/join', (req, res) => {
+    handleJoinGame(req, res, serverState);
+  });
+
+  app.post('/api/reconnect', (req, res) => {
+    handleReconnectPlayer(req, res, serverState);
+  });
+
+  app.post('/api/toggle', (req, res) => {
+    handleToggleDie(req, res, serverState);
+  });
+
+  app.post('/api/roll', (req, res) => {
+    handleRollDice(req, res, serverState, bustGifs);
+  });
+
+  app.post('/api/bank', (req, res) => {
+    handleBankScore(req, res, serverState);
+  });
+
+  // TV client actions
+  app.post('/api/start', (req, res) => {
+    handleStartGame(req, res, serverState);
+  });
+
+  app.post('/api/reset', (req, res) => {
+    handleResetGame(req, res, serverState);
   });
 
   app.use(
@@ -117,7 +168,7 @@ function createServer() {
     console.log(eventLogEnabled ? '[farkle] event log enabled' : '[farkle] event log disabled');
   });
 
-  return { httpServer, io, app, serverState };
+  return { httpServer, app, serverState };
 }
 
 if (require.main === module) {

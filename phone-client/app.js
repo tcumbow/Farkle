@@ -73,6 +73,171 @@
     }
   }
 
+  /**
+   * SSE (Server-Sent Events) connection manager with reconnection support.
+   * Uses EventSource for server→client communication and fetch for client→server.
+   */
+  class GameConnection {
+    constructor() {
+      this.eventSource = null;
+      this.handlers = {};
+      this.reconnectTimer = null;
+      this.reconnectDelay = 1000;
+      this.maxReconnectDelay = 5000;
+      this.intentionallyClosed = false;
+      this.connectionAttempts = 0;
+      this.lastConnectTime = null;
+      this.connected = false;
+    }
+
+    connect(playerId = null) {
+      this.intentionallyClosed = false;
+      this._clearReconnectTimer();
+      this.connectionAttempts++;
+      this.lastConnectTime = Date.now();
+
+      // Build SSE URL with optional playerId
+      let url = '/api/events';
+      if (playerId) {
+        url += `?playerId=${encodeURIComponent(playerId)}`;
+      }
+
+      try {
+        this.eventSource = new EventSource(url);
+      } catch (err) {
+        console.error('[SSE] EventSource construction failed:', err);
+        this._scheduleReconnect();
+        return;
+      }
+
+      this.eventSource.onopen = () => {
+        this.connected = true;
+        this.reconnectDelay = 1000;
+        this._emit('open');
+      };
+
+      // Listen for specific event types
+      this.eventSource.addEventListener('game_state', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this._emit('game_state', data);
+        } catch (err) {
+          console.warn('[SSE] Failed to parse game_state:', err);
+        }
+      });
+
+      this.eventSource.addEventListener('reaction', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this._emit('reaction', data);
+        } catch (err) {
+          console.warn('[SSE] Failed to parse reaction:', err);
+        }
+      });
+
+      this.eventSource.addEventListener('error', (event) => {
+        // This is an SSE error event from server, not connection error
+        try {
+          const data = JSON.parse(event.data);
+          this._emit('server_error', data);
+        } catch (err) {
+          // Might be a connection error, not a server error event
+        }
+      });
+
+      this.eventSource.onerror = () => {
+        this.connected = false;
+        this._emit('close');
+        
+        if (!this.intentionallyClosed) {
+          // EventSource auto-reconnects, but we'll track the state
+          this._scheduleReconnect();
+        }
+      };
+    }
+
+    async send(action, payload = {}) {
+      const url = `/api/${action}`;
+      
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          return { success: false, error: data.error, message: data.message };
+        }
+        
+        return data;
+      } catch (err) {
+        console.error(`[API] ${action} error:`, err);
+        return { success: false, error: 'NETWORK_ERROR', message: err.message };
+      }
+    }
+
+    close() {
+      this.intentionallyClosed = true;
+      this.connected = false;
+      this._clearReconnectTimer();
+      
+      if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+    }
+
+    isConnected() {
+      return this.connected && this.eventSource && this.eventSource.readyState === EventSource.OPEN;
+    }
+
+    on(event, handler) {
+      if (!this.handlers[event]) {
+        this.handlers[event] = [];
+      }
+      this.handlers[event].push(handler);
+    }
+
+    off(event, handler) {
+      if (!this.handlers[event]) return;
+      this.handlers[event] = this.handlers[event].filter(h => h !== handler);
+    }
+
+    _emit(event, data) {
+      const handlers = this.handlers[event];
+      if (handlers) {
+        handlers.forEach(h => h(data));
+      }
+    }
+
+    _scheduleReconnect() {
+      if (this.intentionallyClosed) return;
+      
+      this._clearReconnectTimer();
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, this.maxReconnectDelay);
+        // Close existing EventSource before reconnecting
+        if (this.eventSource) {
+          this.eventSource.close();
+          this.eventSource = null;
+        }
+        this.connect();
+      }, this.reconnectDelay);
+    }
+
+    _clearReconnectTimer() {
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+    }
+  }
+
   const storageKey = 'farkle.phone.identity';
   const nameKey = 'farkle.phone.lastName';
 
@@ -103,13 +268,14 @@
   const params = new URLSearchParams(window.location.search);
   const gameId = params.get('gameId') || '';
 
-  let socket;
+  let connection = null;
   let pendingJoin = false;
   let latestGameState = null;
   let lastDiceSignature = null;
-  let reconnectAttempted = false;
+  let reconnectAttemptedForConnection = false;
   let identityRecognized = false;
   let currentIdentity = null;
+  let lifecycleHandlersBound = false;
 
   initialize();
 
@@ -125,55 +291,56 @@
     const storedIdentity = readIdentityFromStorage();
     currentIdentity = storedIdentity && storedIdentity.gameId === gameId ? storedIdentity : null;
 
-    socket = io({ transports: ['websocket'] });
+    setupConnection();
+    bindLifecycleHandlers();
 
-    socket.on('connect', () => {
+    formEl.addEventListener('submit', handleJoinSubmit);
+    leaveButton.addEventListener('click', handleLeave);
+    if (diceContainer) {
+      diceContainer.addEventListener('click', handleDiceClick);
+    }
+    if (rollButton) {
+      rollButton.addEventListener('click', handleRoll);
+    }
+    if (bankButton) {
+      bankButton.addEventListener('click', handleBank);
+    }
+
+    updateCredentials(currentIdentity);
+    renderGameInfo(null);
+    renderTurnState(null);
+    updateJoinAvailability();
+  }
+
+  function setupConnection() {
+    // Ensure any existing connection is fully closed first
+    if (connection) {
+      connection.close();
+      connection = null;
+    }
+
+    reconnectAttemptedForConnection = false;
+    identityRecognized = false;
+
+    connection = new GameConnection();
+
+    connection.on('open', () => {
       setStatus('info', 'Connected. Enter your name to join.');
-      if (!reconnectAttempted && currentIdentity) {
-        reconnectAttempted = true;
+      if (!reconnectAttemptedForConnection && currentIdentity) {
+        reconnectAttemptedForConnection = true;
         emitReconnect(currentIdentity);
       }
       updateJoinAvailability();
       renderTurnState(latestGameState);
     });
 
-    socket.on('disconnect', () => {
+    connection.on('close', () => {
       setStatus('error', 'Disconnected. Retrying…');
       updateJoinAvailability();
       renderTurnState(latestGameState);
     });
 
-    socket.on('connect_error', error => {
-      console.error('Socket connect error', error);
-      setStatus('error', 'Unable to connect. Check network.');
-      updateJoinAvailability();
-      renderTurnState(latestGameState);
-    });
-
-    socket.on('join_success', payload => {
-      if (!payload || !payload.playerId || !payload.playerSecret) {
-        console.warn('Invalid join_success payload', payload);
-        return;
-      }
-
-      const identity = {
-        gameId,
-        playerId: payload.playerId,
-        playerSecret: payload.playerSecret,
-        name: nameInput.value.trim()
-      };
-      saveIdentity(identity);
-      storeName(identity.name);
-      setStatus('success', 'Joined! Waiting for your turn.');
-      showToast('You joined the game.');
-      updateCredentials(identity);
-      identityRecognized = true;
-      pendingJoin = false;
-      updateJoinAvailability();
-      renderTurnState(latestGameState);
-    });
-
-    socket.on('game_state', gameState => {
+    connection.on('game_state', gameState => {
       latestGameState = gameState;
       renderGameInfo(gameState);
       updateJoinAvailability();
@@ -197,14 +364,14 @@
       renderTurnState(gameState);
     });
 
-    socket.on('reaction', payload => {
+    connection.on('reaction', payload => {
       const identity = getIdentity();
       if (payload && payload.type === 'bust' && payload.mediaUrl && identity && payload.playerId === identity.playerId) {
         reactionOverlay.show(payload.mediaUrl);
       }
     });
 
-    socket.on('error', payload => {
+    connection.on('server_error', payload => {
       if (payload && payload.message) {
         setStatus('error', payload.message);
         showToast(payload.message);
@@ -215,27 +382,63 @@
       updateJoinAvailability();
     });
 
-    formEl.addEventListener('submit', handleJoinSubmit);
-    leaveButton.addEventListener('click', handleLeave);
-    if (diceContainer) {
-      diceContainer.addEventListener('click', handleDiceClick);
-    }
-    if (rollButton) {
-      rollButton.addEventListener('click', handleRoll);
-    }
-    if (bankButton) {
-      bankButton.addEventListener('click', handleBank);
+    // Connect with playerId if we have one (for better server-side tracking)
+    const playerId = currentIdentity ? currentIdentity.playerId : null;
+    connection.connect(playerId);
+  }
+
+  function teardownConnection() {
+    if (!connection) {
+      return;
     }
 
-    updateCredentials(currentIdentity);
-    renderGameInfo(null);
-    renderTurnState(null);
+    connection.close();
+    connection = null;
+    identityRecognized = false;  // Reset so game_state handler updates status
     updateJoinAvailability();
   }
 
-  function handleJoinSubmit(event) {
+  function bindLifecycleHandlers() {
+    if (lifecycleHandlersBound) {
+      return;
+    }
+    lifecycleHandlersBound = true;
+
+    // On mobile, aggressively tearing down connections on visibility change can exhaust
+    // the browser's connection pool. Instead, we let SSE stay open and rely
+    // on its native reconnection. We only clean up on actual page unload.
+    
+    const handlePageHide = () => {
+      // Force close on page unload to release resources
+      if (connection) {
+        connection.close();
+        connection = null;
+      }
+    };
+
+    // pagehide is more reliable than beforeunload on mobile
+    window.addEventListener('pagehide', handlePageHide);
+    
+    // Also handle beforeunload for desktop browsers
+    window.addEventListener('beforeunload', handlePageHide);
+
+    // When page becomes visible again after being hidden, check connection health
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (!connection) {
+          setStatus('info', 'Reconnecting…');
+          setupConnection();
+        } else if (!connection.isConnected()) {
+          // Connection exists but isn't connected - EventSource should auto-reconnect
+          setStatus('info', 'Reconnecting…');
+        }
+      }
+    });
+  }
+
+  async function handleJoinSubmit(event) {
     event.preventDefault();
-    if (!socket || !socket.connected || pendingJoin) {
+    if (!connection || !connection.isConnected() || pendingJoin) {
       return;
     }
 
@@ -255,10 +458,32 @@
     updateJoinAvailability();
     setStatus('info', 'Joining…');
 
-    socket.emit('join_game', {
+    const result = await connection.send('join', {
       gameId,
       name
     });
+
+    if (result.success && result.playerId && result.playerSecret) {
+      const identity = {
+        gameId,
+        playerId: result.playerId,
+        playerSecret: result.playerSecret,
+        name
+      };
+      saveIdentity(identity);
+      storeName(name);
+      setStatus('success', 'Joined! Waiting for your turn.');
+      showToast('You joined the game.');
+      updateCredentials(identity);
+      identityRecognized = true;
+    } else {
+      setStatus('error', result.message || 'Failed to join.');
+      showToast(result.message || 'Failed to join.');
+    }
+
+    pendingJoin = false;
+    updateJoinAvailability();
+    renderTurnState(latestGameState);
   }
 
   function handleLeave() {
@@ -271,22 +496,34 @@
     renderTurnState(latestGameState);
   }
 
-  function emitReconnect(identity) {
-    if (!socket || !socket.connected) {
+  async function emitReconnect(identity) {
+    if (!connection) {
       return;
     }
 
     setStatus('info', 'Reconnecting with saved identity…');
 
-    socket.emit('reconnect_player', {
+    const result = await connection.send('reconnect', {
       gameId,
       playerId: identity.playerId,
       playerSecret: identity.playerSecret
     });
+
+    if (result.success) {
+      identityRecognized = true;
+      setStatus('success', `Reconnected as ${identity.name}.`);
+    } else {
+      // Reconnect failed - identity is stale, clear it so user can rejoin
+      console.warn('[Reconnect] Failed:', result.message);
+      clearIdentity();
+      updateCredentials(null);
+      setStatus('info', 'Previous session expired. Enter your name to join.');
+      updateJoinAvailability();
+    }
   }
 
   function updateJoinAvailability() {
-    const connected = socket && socket.connected;
+    const connected = connection && connection.isConnected();
     const identity = getIdentity();
     const inLobby = !latestGameState || latestGameState.phase === 'lobby';
     const canAttemptJoin = connected && !pendingJoin && !identity && inLobby;
@@ -424,7 +661,6 @@
     if (rollEnabled && allSelectableSelected) {
       rollButton.textContent = '"Free" Roll';
     } else if (rollEnabled) {
-      // Count how many dice will be rolled (selectable dice that are not selected)
       const diceToRoll = selectableIndices.filter(index => !selectedSet.has(index)).length;
       rollButton.textContent = `Roll ${diceToRoll} Dice`;
     } else {
@@ -462,7 +698,7 @@
   }
 
   function attemptToggleDie(index) {
-    if (!socket || !socket.connected) {
+    if (!connection || !connection.isConnected()) {
       return;
     }
 
@@ -481,7 +717,11 @@
       return;
     }
 
-    socket.emit('toggle_die_selection', { dieIndex: index });
+    connection.send('toggle', { 
+      playerId: identity.playerId,
+      playerSecret: identity.playerSecret,
+      dieIndex: index 
+    });
   }
 
   function handleRoll() {
@@ -489,7 +729,11 @@
       return;
     }
 
-    socket.emit('roll_dice', {});
+    const identity = getIdentity();
+    connection.send('roll', {
+      playerId: identity.playerId,
+      playerSecret: identity.playerSecret
+    });
   }
 
   function handleBank() {
@@ -497,12 +741,16 @@
       return;
     }
 
-    socket.emit('bank_score', {});
+    const identity = getIdentity();
+    connection.send('bank', {
+      playerId: identity.playerId,
+      playerSecret: identity.playerSecret
+    });
   }
 
   function canRoll() {
     const identity = getIdentity();
-    if (!socket || !socket.connected || !identity || !latestGameState) {
+    if (!connection || !connection.isConnected() || !identity || !latestGameState) {
       return false;
     }
 
@@ -529,7 +777,7 @@
 
   function canBank() {
     const identity = getIdentity();
-    if (!socket || !socket.connected || !identity || !latestGameState) {
+    if (!connection || !connection.isConnected() || !identity || !latestGameState) {
       return false;
     }
 
@@ -545,16 +793,13 @@
     const selection = turn.selection || { isValid: false, selectedIndices: [], selectionScore: 0 };
     const hasSelection = Array.isArray(selection.selectedIndices) && selection.selectedIndices.length > 0;
 
-    // Calculate total bank amount
     const selectionScore = selection.isValid ? selection.selectionScore : 0;
     const bankTotal = turn.accumulatedTurnScore + selectionScore;
 
-    // Can't bank zero or negative
     if (bankTotal <= 0) {
       return false;
     }
 
-    // Check minimum entry requirement
     const players = Array.isArray(latestGameState.players) ? latestGameState.players : [];
     const playerState = players.find(p => p.playerId === identity.playerId);
     const minimumEntry = latestGameState.config && latestGameState.config.minimumEntryScore 
@@ -565,7 +810,6 @@
       return false;
     }
 
-    // Must have a valid selection or accumulated score
     if (selection.isValid) {
       return true;
     }

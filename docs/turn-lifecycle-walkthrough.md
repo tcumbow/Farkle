@@ -4,7 +4,7 @@ This document describes the **end-to-end lifecycle of a single turn** in the gam
 
 This walkthrough assumes compliance with:
 - Server State Schema
-- WebSocket Event Schema
+- SSE + REST API Schema
 - Dice Scoring Rules
 
 ---
@@ -220,7 +220,7 @@ Once the player has completed a qualifying bank, subsequent banks of any positiv
 ## 7. Player Disconnect Mid-Turn
 
 **Trigger:**
-- Active player's socket disconnects
+- Active player's SSE connection drops
 
 **Server actions:**
 

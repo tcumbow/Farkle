@@ -73,6 +73,151 @@
     }
   }
 
+  /**
+   * SSE (Server-Sent Events) connection manager with reconnection support.
+   * Uses EventSource for server→client communication and fetch for client→server.
+   */
+  class GameConnection {
+    constructor() {
+      this.eventSource = null;
+      this.handlers = {};
+      this.reconnectTimer = null;
+      this.reconnectDelay = 1000;
+      this.maxReconnectDelay = 5000;
+      this.intentionallyClosed = false;
+      this.connected = false;
+    }
+
+    connect() {
+      this.intentionallyClosed = false;
+      this._clearReconnectTimer();
+
+      const url = '/api/events';
+
+      try {
+        this.eventSource = new EventSource(url);
+      } catch (err) {
+        console.error('[SSE] EventSource construction failed:', err);
+        this._scheduleReconnect();
+        return;
+      }
+
+      this.eventSource.onopen = () => {
+        this.connected = true;
+        this.reconnectDelay = 1000;
+        this._emit('open');
+      };
+
+      // Listen for specific event types
+      this.eventSource.addEventListener('game_state', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this._emit('game_state', data);
+        } catch (err) {
+          console.warn('[SSE] Failed to parse game_state:', err);
+        }
+      });
+
+      this.eventSource.addEventListener('reaction', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this._emit('reaction', data);
+        } catch (err) {
+          console.warn('[SSE] Failed to parse reaction:', err);
+        }
+      });
+
+      this.eventSource.onerror = () => {
+        this.connected = false;
+        this._emit('close');
+        
+        if (!this.intentionallyClosed) {
+          this._scheduleReconnect();
+        }
+      };
+    }
+
+    async send(action, payload = {}) {
+      const url = `/api/${action}`;
+      
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          return { success: false, error: data.error, message: data.message };
+        }
+        
+        return data;
+      } catch (err) {
+        console.error(`[API] ${action} error:`, err);
+        return { success: false, error: 'NETWORK_ERROR', message: err.message };
+      }
+    }
+
+    close() {
+      this.intentionallyClosed = true;
+      this.connected = false;
+      this._clearReconnectTimer();
+      
+      if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+    }
+
+    isConnected() {
+      return this.connected && this.eventSource && this.eventSource.readyState === EventSource.OPEN;
+    }
+
+    on(event, handler) {
+      if (!this.handlers[event]) {
+        this.handlers[event] = [];
+      }
+      this.handlers[event].push(handler);
+    }
+
+    off(event, handler) {
+      if (!this.handlers[event]) return;
+      this.handlers[event] = this.handlers[event].filter(h => h !== handler);
+    }
+
+    _emit(event, data) {
+      const handlers = this.handlers[event];
+      if (handlers) {
+        handlers.forEach(h => h(data));
+      }
+    }
+
+    _scheduleReconnect() {
+      if (this.intentionallyClosed) return;
+      
+      this._clearReconnectTimer();
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, this.maxReconnectDelay);
+        if (this.eventSource) {
+          this.eventSource.close();
+          this.eventSource = null;
+        }
+        this.connect();
+      }, this.reconnectDelay);
+    }
+
+    _clearReconnectTimer() {
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+    }
+  }
+
   const connectionStatusEl = document.getElementById('connection-status');
   const startButton = document.getElementById('start-game-btn');
   const resetButton = document.getElementById('reset-game-btn');
@@ -104,8 +249,7 @@
   let lastTurnDiceSignature = null;
   let serverHost = null;
   let serverPort = null;
-
-  const socket = io({ transports: ['websocket'] });
+  let connection = null;
 
   // Fetch server info on page load
   fetch('/api/server-info')
@@ -120,45 +264,45 @@
     })
     .catch(err => {
       console.error('Failed to fetch server info:', err);
-      // Fallback to window.location if fetch fails
     });
 
+  // Initialize connection
+  connection = new GameConnection();
+
   startButton.addEventListener('click', () => {
-    if (socket.connected) {
-      socket.emit('start_game', {});
+    if (connection.isConnected()) {
+      connection.send('start', {});
     }
   });
 
   resetButton.addEventListener('click', () => {
-    if (socket.connected) {
-      socket.emit('reset_game', {});
+    if (connection.isConnected()) {
+      connection.send('reset', {});
     }
   });
 
-  socket.on('connect', () => {
+  connection.on('open', () => {
     updateConnectionStatus(true);
     toggleButtons(latestGameState);
   });
 
-  socket.on('disconnect', () => {
+  connection.on('close', () => {
     updateConnectionStatus(false);
     toggleButtons(null);
   });
 
-  socket.on('connect_error', () => {
-    updateConnectionStatus(false);
-  });
-
-  socket.on('game_state', gameState => {
+  connection.on('game_state', gameState => {
     latestGameState = gameState;
     renderGameState(gameState);
   });
 
-  socket.on('reaction', payload => {
+  connection.on('reaction', payload => {
     if (payload && payload.type === 'bust' && payload.mediaUrl) {
       reactionOverlay.show(payload.mediaUrl);
     }
   });
+
+  connection.connect();
 
   function updateConnectionStatus(isConnected) {
     connectionStatusEl.textContent = isConnected ? 'Connected' : 'Disconnected';
@@ -383,7 +527,7 @@
   }
 
   function toggleButtons(gameState) {
-    const connected = socket.connected;
+    const connected = connection && connection.isConnected();
     const canStart = connected && gameState && gameState.phase === 'lobby' && (gameState.players || []).length > 0;
     startButton.disabled = !canStart;
 

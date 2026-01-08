@@ -15,14 +15,14 @@ You must:
 - Implement the server state exactly as specified
 - Enforce all legality rules on the server
 - Treat clients as views/controllers only
-- Use Socket.IO for real-time updates
+- Use SSE + REST API for real-time updates
 - Broadcast full GameState snapshots after every meaningful state change
 
 Before implementing any logic, read and internalize these documents:
 
 1. docs/design.md
 2. docs/server-state-schema.md
-3. docs/websocket-event-schema.md
+3. docs/sse-rest-api-schema.md
 4. docs/dice-scoring-rules.md
 5. docs/turn-lifecycle-walkthrough.md
 
@@ -31,7 +31,7 @@ If any ambiguity appears during implementation, you must resolve it by referring
 Implementation priorities:
 1. Server state model and invariants
 2. Dice scoring engine with tests
-3. WebSocket event handlers
+3. SSE + REST API handlers
 4. TV client rendering
 5. Phone client UI and actions
 
@@ -49,7 +49,7 @@ farkle/
 │  ├─ gameEngine.js         # Pure game logic & state transitions
 │  ├─ scoring.js            # Dice scoring implementation
 │  ├─ state.js              # ServerState initialization & helpers
-│  ├─ socketHandlers.js     # Socket.IO event handlers
+│  ├─ sseHandlers.js        # SSE + REST API handlers
 │  └─ eventLog.js           # Optional in-memory debug log
 │
 ├─ public/
@@ -68,7 +68,7 @@ farkle/
 ├─ docs/
 │  ├─ design.md
 │  ├─ server-state-schema.md
-│  ├─ websocket-event-schema.md
+│  ├─ sse-rest-api-schema.md
 │  ├─ dice-scoring-rules.md
 │  └─ turn-lifecycle-walkthrough.md
 │
@@ -86,7 +86,7 @@ The following table shows how each Canvas document should be saved into the repo
 |----------------------|------------------|
 | Multiplayer Farkle – Initial Design Specification | `docs/design.md` |
 | Farkle Server State Schema | `docs/server-state-schema.md` |
-| Farkle WebSocket Event Schema | `docs/websocket-event-schema.md` |
+| Farkle SSE + REST API Schema | `docs/sse-rest-api-schema.md` |
 | Farkle Dice Scoring Rules | `docs/dice-scoring-rules.md` |
 | Farkle Turn Lifecycle Walkthrough | `docs/turn-lifecycle-walkthrough.md` |
 
@@ -96,7 +96,7 @@ The following table shows how each Canvas document should be saved into the repo
 
 - `gameEngine.js` should contain pure functions operating on GameState
 - `scoring.js` must implement rules exactly as described in `dice-scoring-rules.md`
-- `socketHandlers.js` must enforce phase, player identity, and turn ownership
+- `sseHandlers.js` must enforce phase, player identity, and turn ownership
 - Clients must render exclusively from `game_state` events
 - No client may infer state transitions locally
 
