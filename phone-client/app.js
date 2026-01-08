@@ -366,8 +366,10 @@
 
     connection.on('reaction', payload => {
       const identity = getIdentity();
-      if (payload && payload.type === 'bust' && payload.mediaUrl && identity && payload.playerId === identity.playerId) {
-        reactionOverlay.show(payload.mediaUrl);
+      if (payload && payload.mediaUrl && identity && payload.playerId === identity.playerId) {
+        if (payload.type === 'bust' || payload.type === 'bank') {
+          reactionOverlay.show(payload.mediaUrl);
+        }
       }
     });
 

@@ -363,7 +363,7 @@ function handleRollDice(req, res, serverState, bustGifs) {
   }
 }
 
-function handleBankScore(req, res, serverState) {
+function handleBankScore(req, res, serverState, bankGifs) {
   const { playerId, playerSecret } = req.body || {};
 
   console.log(`[api] bank_score: playerId=${playerId}`);
@@ -406,6 +406,14 @@ function handleBankScore(req, res, serverState) {
   });
 
   res.json({ success: true, outcome: result.outcome || 'continue' });
+
+  // Send bank reaction
+  const bankGif = bankGifs && bankGifs.length > 0
+    ? bankGifs[Math.floor(Math.random() * bankGifs.length)]
+    : null;
+  if (bankGif) {
+    broadcastReaction('bank', playerId, bankGif);
+  }
 
   // Broadcast updated game state
   broadcastGameState(serverState);
@@ -496,6 +504,30 @@ function loadBustGifs(mediaPath) {
   }
 }
 
+function loadBankGifs(mediaPath) {
+  const fs = require('fs');
+  const path = require('path');
+  const bankDir = path.join(mediaPath, 'bank');
+
+  try {
+    if (!fs.existsSync(bankDir)) {
+      console.log('[sse] No bank media directory found');
+      return [];
+    }
+
+    const files = fs.readdirSync(bankDir);
+    const gifs = files
+      .filter(f => /\.(gif|mp4|webm)$/i.test(f))
+      .map(f => `/media/bank/${f}`);
+
+    console.log(`[sse] Loaded ${gifs.length} bank media files`);
+    return gifs;
+  } catch (err) {
+    console.warn('[sse] Failed to load bank gifs:', err.message);
+    return [];
+  }
+}
+
 // ============================================================================
 // Exports
 // ============================================================================
@@ -515,5 +547,6 @@ module.exports = {
   handleStartGame,
   handleResetGame,
   loadBustGifs,
+  loadBankGifs,
   sseClients
 };

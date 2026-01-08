@@ -297,8 +297,10 @@
   });
 
   connection.on('reaction', payload => {
-    if (payload && payload.type === 'bust' && payload.mediaUrl) {
-      reactionOverlay.show(payload.mediaUrl);
+    if (payload && payload.mediaUrl) {
+      if (payload.type === 'bust' || payload.type === 'bank') {
+        reactionOverlay.show(payload.mediaUrl);
+      }
     }
   });
 
