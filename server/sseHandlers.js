@@ -493,7 +493,7 @@ function loadBustGifs(mediaPath) {
 
     const files = fs.readdirSync(bustDir);
     const gifs = files
-      .filter(f => /\.(gif|mp4|webm)$/i.test(f))
+      .filter(f => /\.(webm)$/i.test(f))
       .map(f => `/media/bust/${f}`);
 
     console.log(`[sse] Loaded ${gifs.length} bust media files`);
@@ -517,7 +517,7 @@ function loadBankGifs(mediaPath) {
 
     const files = fs.readdirSync(bankDir);
     const gifs = files
-      .filter(f => /\.(gif|mp4|webm)$/i.test(f))
+      .filter(f => /\.(webm)$/i.test(f))
       .map(f => `/media/bank/${f}`);
 
     console.log(`[sse] Loaded ${gifs.length} bank media files`);
