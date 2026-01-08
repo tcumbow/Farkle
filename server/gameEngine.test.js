@@ -481,12 +481,13 @@ function runTests() {
         { value: 5, selectable: true },
         { value: 2, selectable: true }
       ],
-      accumulatedTurnScore: 300,
+      accumulatedTurnScore: 400,
       selection: {
         selectedIndices: [0],
         isValid: true,
-        selectionScore: 250
+        selectionScore: 100
       },
+      bestSelectableScore: 150,  // Best score from all selectable dice (1=100, 5=50)
       status: 'awaiting_roll'
     }
   };
@@ -494,6 +495,7 @@ function runTests() {
   withMockedRandomInts(new Array(36).fill(1), () => {
     const bankResult = bankTurnScore(bankState);
     assert(bankResult.success, 'bankTurnScore succeeds with valid selection');
+    // Player starts with 100, banks 400 accumulated + 150 best selectable = 650 total
     assertEquals(bankResult.gameState.players[0].totalScore, 650, 'Banked score added to player total');
     assert(bankResult.gameState.players[0].hasEnteredGame, 'Player marked as entered after surpassing minimum score');
     assertEquals(bankResult.gameState.activeTurnIndex, 1, 'Active turn index advances after banking');
@@ -515,12 +517,14 @@ function runTests() {
           isValid: true,
           selectionScore: 50
         },
+        bestSelectableScore: 50,  // Best score from selectable dice (just the 5)
         status: 'awaiting_roll'
       }
     };
 
     const smallBankResult = bankTurnScore(reentryState);
     assert(smallBankResult.success, 'bankTurnScore allows small bank after player has entered');
+    // Player had 650 from previous bank, now banks 50 more = 700
     assertEquals(smallBankResult.gameState.players[0].totalScore, 700, 'Small bank amount added after entry requirement met');
   });
 
@@ -548,6 +552,7 @@ function runTests() {
         isValid: true,
         selectionScore: 100
       },
+      bestSelectableScore: 100,  // Best score from selectable dice (just the 1)
       status: 'awaiting_roll'
     }
   };
@@ -580,13 +585,14 @@ function runTests() {
         isValid: false,
         selectionScore: 0
       },
+      bestSelectableScore: 0,  // No scoring dice available
       status: 'awaiting_roll'
     }
   };
 
   const invalidSelectionResult = bankTurnScore(invalidSelectionState);
-  assert(!invalidSelectionResult.success, 'bankTurnScore rejects invalid selection with dice selected');
-  assertEquals(invalidSelectionResult.error, 'INVALID_SELECTION', 'Invalid selection error code returned');
+  assert(!invalidSelectionResult.success, 'bankTurnScore rejects when no scoring dice available');
+  assertEquals(invalidSelectionResult.error, 'BANK_ZERO', 'Bank zero error when no scoring dice');
 
   // === Win Condition / Final Round Tests ===
   console.log('\n--- Win Condition / Final Round Tests ---');
@@ -608,6 +614,7 @@ function runTests() {
         isValid: true,
         selectionScore: 100
       },
+      bestSelectableScore: 100,  // Just the single 1
       status: 'awaiting_roll'
     }
   };
@@ -642,6 +649,7 @@ function runTests() {
         isValid: true,
         selectionScore: 1000
       },
+      bestSelectableScore: 1000,  // Three 1s
       status: 'awaiting_roll'
     }
   };
@@ -669,6 +677,7 @@ function runTests() {
         isValid: true,
         selectionScore: 50
       },
+      bestSelectableScore: 50,  // Just the 5
       status: 'awaiting_roll'
     }
   };

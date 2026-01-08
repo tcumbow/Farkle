@@ -669,10 +669,10 @@
       rollButton.textContent = 'Roll Dice';
     }
 
-    // Update bank button text with total amount
+    // Update bank button text with total amount using best possible score
     if (bankEnabled) {
-      const selectionScore = selection.isValid ? selection.selectionScore : 0;
-      const bankTotal = turn.accumulatedTurnScore + selectionScore;
+      const bestScore = turn.bestSelectableScore || 0;
+      const bankTotal = turn.accumulatedTurnScore + bestScore;
       bankButton.textContent = `Bank ${bankTotal}`;
     } else {
       bankButton.textContent = 'Bank Score';
@@ -792,11 +792,10 @@
       return false;
     }
 
-    const selection = turn.selection || { isValid: false, selectedIndices: [], selectionScore: 0 };
-    const hasSelection = Array.isArray(selection.selectedIndices) && selection.selectedIndices.length > 0;
-
-    const selectionScore = selection.isValid ? selection.selectionScore : 0;
-    const bankTotal = turn.accumulatedTurnScore + selectionScore;
+    // Use bestSelectableScore (best possible score from all selectable dice) for banking logic
+    // This ensures deselecting dice doesn't affect whether you can bank or the amount
+    const bestScore = turn.bestSelectableScore || 0;
+    const bankTotal = turn.accumulatedTurnScore + bestScore;
 
     if (bankTotal <= 0) {
       return false;
@@ -812,11 +811,12 @@
       return false;
     }
 
-    if (selection.isValid) {
+    // Can bank if there's a positive best score from selectable dice, or accumulated score from previous rolls
+    if (bestScore > 0) {
       return true;
     }
 
-    if (!hasSelection && turn.accumulatedTurnScore > 0) {
+    if (turn.accumulatedTurnScore > 0) {
       return true;
     }
 

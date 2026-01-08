@@ -241,6 +241,13 @@ function applyDefaultSelectionToTurn(turn) {
 
   const { indices, evaluation } = computeDefaultSelection(turn.dice);
 
+  // Calculate best possible score from all selectable dice (used for banking)
+  const selectableValues = turn.dice
+    .filter(die => die.selectable)
+    .map(die => die.value);
+  const bestResult = selectableValues.length > 0 ? getBestScore(selectableValues) : { score: 0 };
+  const bestSelectableScore = bestResult.score;
+
   if (!evaluation.isValid || indices.length === 0) {
     return {
       ...turn,
@@ -249,6 +256,7 @@ function applyDefaultSelectionToTurn(turn) {
         isValid: false,
         selectionScore: 0
       },
+      bestSelectableScore,
       status: 'awaiting_selection'
     };
   }
@@ -260,6 +268,7 @@ function applyDefaultSelectionToTurn(turn) {
       isValid: true,
       selectionScore: evaluation.selectionScore
     },
+    bestSelectableScore,
     status: 'awaiting_roll'
   };
 }
@@ -553,12 +562,10 @@ function bankTurnScore(gameState) {
     return { success: false, error: 'PLAYER_NOT_FOUND' };
   }
 
-  if (!turn.selection.isValid && turn.selection.selectedIndices.length > 0) {
-    return { success: false, error: 'INVALID_SELECTION' };
-  }
-
-  const selectionScore = turn.selection.isValid ? turn.selection.selectionScore : 0;
-  const bankTotal = turn.accumulatedTurnScore + selectionScore;
+  // Use bestSelectableScore (best possible score from all selectable dice) for banking
+  // This ensures deselecting dice doesn't reduce the bank amount
+  const bestScore = turn.bestSelectableScore || 0;
+  const bankTotal = turn.accumulatedTurnScore + bestScore;
 
   const targetScore = getTargetScore(gameState);
   let finalRound = normalizeFinalRound(gameState);
