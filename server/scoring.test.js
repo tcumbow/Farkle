@@ -83,22 +83,23 @@ function runTests() {
 
   // === Section 4: Four, Five, and Six of a Kind ===
   console.log('\n--- N-of-a-Kind Tests ---');
-  test('Four 1s score 2000', [1, 1, 1, 1], 2000);
-  test('Four 2s score 400', [2, 2, 2, 2], 400);
-  test('Four 3s score 600', [3, 3, 3, 3], 600);
-  test('Four 4s score 800', [4, 4, 4, 4], 800);
+  // Under the updated rules: 4/5/6 of a kind are fixed values regardless of face
+  test('Four 1s score 1000', [1, 1, 1, 1], 1000);
+  test('Four 2s score 1000', [2, 2, 2, 2], 1000);
+  test('Four 3s score 1000', [3, 3, 3, 3], 1000);
+  test('Four 4s score 1000', [4, 4, 4, 4], 1000);
   test('Four 5s score 1000', [5, 5, 5, 5], 1000);
-  test('Four 6s score 1200', [6, 6, 6, 6], 1200);
-  
-  test('Five 1s score 3000', [1, 1, 1, 1, 1], 3000);
-  test('Five 2s score 600', [2, 2, 2, 2, 2], 600);
-  test('Five 3s score 900', [3, 3, 3, 3, 3], 900);
-  test('Five 5s score 1500', [5, 5, 5, 5, 5], 1500);
-  
-  test('Six 1s score 4000', [1, 1, 1, 1, 1, 1], 4000);
-  test('Six 2s score 800', [2, 2, 2, 2, 2, 2], 800);
-  test('Six 3s score 1200', [3, 3, 3, 3, 3, 3], 1200);
-  test('Six 6s score 2400', [6, 6, 6, 6, 6, 6], 2400);
+  test('Four 6s score 1000', [6, 6, 6, 6], 1000);
+
+  test('Five 1s score 2000', [1, 1, 1, 1, 1], 2000);
+  test('Five 2s score 2000', [2, 2, 2, 2, 2], 2000);
+  test('Five 3s score 2000', [3, 3, 3, 3, 3], 2000);
+  test('Five 5s score 2000', [5, 5, 5, 5, 5], 2000);
+
+  test('Six 1s score 3000', [1, 1, 1, 1, 1, 1], 3000);
+  test('Six 2s score 3000', [2, 2, 2, 2, 2, 2], 3000);
+  test('Six 3s score 3000', [3, 3, 3, 3, 3, 3], 3000);
+  test('Six 6s score 3000', [6, 6, 6, 6, 6, 6], 3000);
 
   // === Section 5: Straight ===
   console.log('\n--- Straight Tests ---');
@@ -110,6 +111,8 @@ function runTests() {
   test('Three pairs (1-1, 3-3, 5-5) score 1500', [1, 1, 3, 3, 5, 5], 1500);
   test('Three pairs (2-2, 4-4, 6-6) score 1500', [2, 2, 4, 4, 6, 6], 1500);
   test('Three pairs mixed order', [3, 5, 3, 5, 1, 1], 1500);
+  // Four-of-a-kind plus a pair should be treated as three pairs and score 1500
+  test('Four of a kind + pair treated as three pairs', [4, 4, 4, 4, 2, 2], 1500);
 
   // === Section 7: Two Triplets ===
   console.log('\n--- Two Triplets Tests ---');
@@ -123,7 +126,7 @@ function runTests() {
   test('Three 1s + one 5 + one 2 is invalid', [1, 1, 1, 5, 2], 0, false);
   test('Three 2s + one 1 + one 5 = 350', [2, 2, 2, 1, 5], 350);
   test('Three 3s + two 1s = 500', [3, 3, 3, 1, 1], 500);
-  test('Four 4s + one 1 + one 5 = 950', [4, 4, 4, 4, 1, 5], 950);
+  test('Four 4s + one 1 + one 5 = 1150', [4, 4, 4, 4, 1, 5], 1150);
 
   // === Section 10: Invalid Selections ===
   console.log('\n--- Invalid Selection Tests ---');
@@ -135,7 +138,7 @@ function runTests() {
   // === Edge Cases ===
   console.log('\n--- Edge Case Tests ---');
   test('Empty array scores 0', [], 0);
-  test('Six 5s score 2000', [5, 5, 5, 5, 5, 5], 2000);
+  test('Six 5s score 3000', [5, 5, 5, 5, 5, 5], 3000);
   test('Three 1s + three 2s (two triplets) = 2500', [1, 1, 1, 2, 2, 2], 2500);
 
   // === Bust Detection Tests ===

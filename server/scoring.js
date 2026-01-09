@@ -42,6 +42,13 @@ function scoreDice(dice) {
     return { score: 1500, isValid: true, usedDice: dice.slice() };
   }
 
+  // Check for four of a kind + a pair (treat as three pairs)
+  const hasFour = counts.some((count, idx) => idx > 0 && count === 4);
+  const hasPair = counts.some((count, idx) => idx > 0 && count === 2);
+  if (dice.length === 6 && hasFour && hasPair) {
+    return { score: 1500, isValid: true, usedDice: dice.slice() };
+  }
+
   // Check for two triplets
   const triplets = counts.filter((count, idx) => idx > 0 && count === 3).length;
   if (dice.length === 6 && triplets === 2) {
@@ -53,23 +60,26 @@ function scoreDice(dice) {
     const count = counts[value];
     
     if (count >= 3) {
-      // Base score for three of a kind
-      const baseScore = value === 1 ? 1000 : value * 100;
-      
+      // Apply authoritative scoring rules:
+      // three-of-a-kind: 1s=1000, others=value*100
+      // four-of-a-kind: 1000 (fixed)
+      // five-of-a-kind: 2000 (fixed)
+      // six-of-a-kind: 3000 (fixed)
       if (count === 3) {
+        const baseScore = value === 1 ? 1000 : value * 100;
         totalScore += baseScore;
         for (let i = 0; i < 3; i++) usedDice.push(value);
       } else if (count === 4) {
-        totalScore += baseScore * 2;
+        totalScore += 1000;
         for (let i = 0; i < 4; i++) usedDice.push(value);
       } else if (count === 5) {
-        totalScore += baseScore * 3;
+        totalScore += 2000;
         for (let i = 0; i < 5; i++) usedDice.push(value);
       } else if (count === 6) {
-        totalScore += baseScore * 4;
+        totalScore += 3000;
         for (let i = 0; i < 6; i++) usedDice.push(value);
       }
-      
+
       counts[value] = 0; // Mark as consumed
     }
   }
@@ -131,6 +141,13 @@ function isBust(dice) {
   // Check for three pairs (only valid with exactly 6 dice and exactly 3 pairs)
   const pairs = counts.filter((count, idx) => idx > 0 && count === 2).length;
   if (dice.length === 6 && pairs === 3 && counts.filter((count, idx) => idx > 0 && count > 0).length === 3) {
+    return false;
+  }
+
+  // Check for four-of-a-kind + pair (treat as three pairs)
+  const hasFourForBust = counts.some((count, idx) => idx > 0 && count === 4);
+  const hasPairForBust = counts.some((count, idx) => idx > 0 && count === 2);
+  if (dice.length === 6 && hasFourForBust && hasPairForBust) {
     return false;
   }
 
