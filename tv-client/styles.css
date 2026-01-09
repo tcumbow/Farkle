@@ -222,10 +222,39 @@ body {
 }
 
 #scoreboard th,
+#scoreboard th,
 #scoreboard td {
-  padding: 10px;
+  padding: 12px 10px;
   text-align: left;
   border-bottom: 1px solid #2f2f2f;
+  font-size: 20px; /* slightly larger for readability */
+}
+
+/* Progress bar cell */
+.progress-cell .progress-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.progress-bar {
+  flex: 1 1 70%; /* give the bar more relative width */
+  height: 18px; /* slightly taller for TV readability */
+  background: #232323;
+  border-radius: 10px;
+  border: 1px solid #2b2b2b;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4a90e2, #3ddc97);
+  width: 0%;
+  transition: width 400ms ease;
+}
+.progress-label {
+  min-width: 36px;
+  text-align: right;
+  font-size: 14px;
+  color: #cdd6f7;
 }
 
 #scoreboard tbody tr.active-row {

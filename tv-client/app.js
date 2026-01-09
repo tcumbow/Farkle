@@ -534,16 +534,35 @@
       nameCell.textContent = entry.player.name;
       const scoreCell = document.createElement('td');
       scoreCell.textContent = String(entry.player.totalScore);
-      const statusCell = document.createElement('td');
-      const statusBits = [];
-      statusBits.push(entry.player.connected ? 'Connected' : 'Disconnected');
-      statusBits.push(entry.player.hasEnteredGame ? 'Entered' : 'Not entered');
-      statusCell.textContent = statusBits.join(' / ');
+
+      // Progress cell: graphical bar showing fraction of victory target (10000)
+      const progressCell = document.createElement('td');
+      progressCell.className = 'progress-cell';
+      const progressWrapper = document.createElement('div');
+      progressWrapper.className = 'progress-wrapper';
+      const progressBar = document.createElement('div');
+      progressBar.className = 'progress-bar';
+      const progressFill = document.createElement('div');
+      progressFill.className = 'progress-fill';
+
+      const VICTORY = 10000;
+      const score = typeof entry.player.totalScore === 'number' ? entry.player.totalScore : Number(entry.player.totalScore) || 0;
+      const pct = Math.max(0, Math.min(1, score / VICTORY));
+      progressFill.style.width = `${Math.round(pct * 100)}%`;
+      progressFill.setAttribute('aria-valuenow', String(Math.round(pct * 100)));
+      progressFill.setAttribute('aria-valuemin', '0');
+      progressFill.setAttribute('aria-valuemax', '100');
+
+      progressBar.appendChild(progressFill);
+      progressWrapper.appendChild(progressBar);
+
+      // No percentage label — keep the bar only
+      progressCell.appendChild(progressWrapper);
 
       row.appendChild(positionCell);
       row.appendChild(nameCell);
       row.appendChild(scoreCell);
-      row.appendChild(statusCell);
+      row.appendChild(progressCell);
 
       scoreboardBody.appendChild(row);
     });
