@@ -42,14 +42,17 @@ Rules are based on **standard/classic Farkle**.
 
 | Dice | Score | Rule |
 |------|-------|------|
-| Four of a kind | Base × 2 | Based on three-of-a-kind value |
-| Five of a kind | Base × 3 | |
-| Six of a kind | Base × 4 | |
+| Four of a kind | 1000 | Fixed value regardless of face |
+| Five of a kind | 2000 | Fixed value regardless of face |
+| Six of a kind | 3000 | Fixed value regardless of face |
 
 Example:
-- Four 3s = 600
-- Five 5s = 1500
-- Six 2s = 800
+- Four 3s = 1000
+- Five 5s = 2000
+- Six 2s = 3000
+
+Additional special case:
+- Four of a kind + a pair (four identical dice plus a separate pair) — treat as three pairs and score 1500
 
 ---
 
@@ -67,10 +70,11 @@ Straight consumes all dice.
 
 | Dice | Score |
 |------|-------|
-| Three distinct pairs | 1500 |
+| Three pairs | 1500 |
 
-Example:
+Examples:
 - 1-1, 3-3, 5-5
+- 2-2, 2-2, 6-6
 
 ---
 
@@ -173,9 +177,10 @@ Recommended scoring algorithm:
 
 1. Count dice values
 2. Detect special cases first:
-   - Straight
-   - Three pairs
-   - Two triplets
+  - Straight
+  - Three pairs
+  - Four of a kind + a pair
+  - Two triplets
 3. Apply kind-based scoring
 4. Apply remaining single 1s and 5s
 5. Validate all selected dice were consumed
