@@ -80,6 +80,9 @@ Notes:
 - `hasEnteredGame` prevents banking scores below minimum
 - Duplicate player names are undefined behavior
 
+Transient server field:
+- `_previousTotal` (optional, internal): number — when a player successfully banks, the server temporarily sets `_previousTotal` on the player's object to record the prior total. This is used to accurately produce structured `bank` reaction payloads (so clients can animate the transfer). `_previousTotal` is an internal convenience and clients should ignore it in the canonical `GameState` payload (it may be omitted by serializers or removed after broadcasting).
+
 ---
 
 ## 5. TurnState

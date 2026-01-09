@@ -18,6 +18,21 @@
       this.mediaEl.loop = false;
       this.overlayEl.appendChild(this.mediaEl);
 
+      // Text-based bank overlay elements
+      this.bankEl = document.createElement('div');
+      this.bankEl.className = 'bank-overlay';
+      this.bankEl.setAttribute('aria-hidden', 'true');
+      this.bankAmountEl = document.createElement('div');
+      this.bankAmountEl.className = 'bank-amount';
+      this.bankPrevEl = document.createElement('div');
+      this.bankPrevEl.className = 'bank-prev';
+      this.bankLabelEl = document.createElement('div');
+      this.bankLabelEl.className = 'bank-label';
+      this.bankEl.appendChild(this.bankLabelEl);
+      this.bankEl.appendChild(this.bankAmountEl);
+      this.bankEl.appendChild(this.bankPrevEl);
+      this.overlayEl.appendChild(this.bankEl);
+
       this.overlayEl.addEventListener('click', () => this.hide());
 
       if (this.root && this.root.appendChild) {
@@ -29,15 +44,15 @@
     }
 
     show(mediaUrl) {
-      if (this.active) {
-        return;
-      }
-      if (!mediaUrl) {
-        return;
-      }
+      if (this.active) return;
+      if (!mediaUrl) return;
 
+      this._clearAll();
       this.active = true;
+      this.currentType = 'media';
       this.overlayEl.classList.add('visible');
+      this.mediaEl.classList.remove('hidden');
+      this.bankEl.classList.add('hidden');
       this.mediaEl.src = mediaUrl;
       this.mediaEl.currentTime = 0;
       this.mediaEl.play().catch(() => {});
@@ -57,19 +72,85 @@
       };
     }
 
+    showBank({ bankAmount = 0, previousTotal = 0, playerName = null }) {
+      this._clearAll();
+      this.active = true;
+      this.currentType = 'bank';
+      this.overlayEl.classList.add('visible');
+      this.mediaEl.classList.add('hidden');
+      this.bankEl.classList.remove('hidden');
+
+      this.bankLabelEl.textContent = playerName ? `${playerName} banked points:` : 'Banked points:';
+      this.bankAmountEl.textContent = `+${bankAmount}`;
+      this.bankPrevEl.textContent = `${previousTotal}`;
+
+      // Sequence: 0.5s pause, 1s transfer animation, 0.5s final
+      const animateTransfer = () => {
+        const duration = 1000;
+        const start = Date.now();
+        const fromPrev = previousTotal;
+        const toPrev = previousTotal + bankAmount;
+        const fromBank = bankAmount;
+        const tick = () => {
+          const now = Date.now();
+          const t = Math.min(1, (now - start) / duration);
+          const currentPrev = Math.floor(fromPrev + (toPrev - fromPrev) * t);
+          const remainingBank = Math.max(0, Math.ceil((fromBank * (1 - t)) / 10) * 10);
+          this.bankPrevEl.textContent = `${currentPrev}`;
+          this.bankAmountEl.textContent = `+${remainingBank}`;
+          if (t < 1) {
+            this.transferTimer = requestAnimationFrame(tick);
+          } else {
+            this.bankPrevEl.textContent = `${toPrev}`;
+            this.bankAmountEl.textContent = `+0`;
+          }
+        };
+        tick();
+      };
+
+      this.hideTimer = setTimeout(() => {
+        animateTransfer();
+        this.hideTimer = setTimeout(() => this.hide(), 1500);
+      }, 500);
+    }
+
     hide() {
-      if (!this.active) {
-        return;
-      }
+      if (!this.active) return;
       this.active = false;
+      this.currentType = null;
       if (this.hideTimer) {
         clearTimeout(this.hideTimer);
         this.hideTimer = null;
+      }
+      if (this.transferTimer) {
+        cancelAnimationFrame(this.transferTimer);
+        this.transferTimer = null;
       }
       this.mediaEl.pause();
       this.mediaEl.removeAttribute('src');
       this.mediaEl.load();
       this.overlayEl.classList.remove('visible');
+      this.mediaEl.classList.remove('hidden');
+      this.bankEl.classList.add('hidden');
+    }
+
+    _clearAll() {
+      if (this.hideTimer) {
+        clearTimeout(this.hideTimer);
+        this.hideTimer = null;
+      }
+      if (this.transferTimer) {
+        cancelAnimationFrame(this.transferTimer);
+        this.transferTimer = null;
+      }
+      this.mediaEl.pause();
+      this.mediaEl.removeAttribute('src');
+      this.mediaEl.load();
+      this.overlayEl.classList.remove('visible');
+      this.mediaEl.classList.remove('hidden');
+      this.bankEl.classList.add('hidden');
+      this.active = false;
+      this.currentType = null;
     }
   }
 
@@ -366,10 +447,20 @@
 
     connection.on('reaction', payload => {
       const identity = getIdentity();
-      if (payload && payload.mediaUrl && identity && payload.playerId === identity.playerId) {
-        if (payload.type === 'bust' || payload.type === 'bank') {
-          reactionOverlay.show(payload.mediaUrl);
-        }
+      if (!payload || !identity || payload.playerId !== identity.playerId) return;
+
+      if (payload.type === 'bank') {
+        const bankAmount = typeof payload.bankAmount === 'number' ? payload.bankAmount : 0;
+        const previousTotal = typeof payload.previousTotal === 'number' ? payload.previousTotal : 0;
+        const playerName = typeof payload.playerName === 'string' ? payload.playerName : null;
+        reactionOverlay.showBank({ bankAmount, previousTotal, playerName });
+        return;
+      }
+
+      if (payload.mediaUrl && payload.type === 'bust') {
+        // Do not override an active bank overlay
+        if (reactionOverlay.currentType === 'bank' && reactionOverlay.active) return;
+        reactionOverlay.show(payload.mediaUrl);
       }
     });
 

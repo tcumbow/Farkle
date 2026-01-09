@@ -347,6 +347,23 @@ html, body {
   object-fit: contain;
 }
 
+.bank-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.bank-overlay .bank-amount {
+  font-size: 36px;
+  color: #0f0;
+  font-weight: 700;
+}
+.bank-overlay .bank-prev {
+  font-size: 20px;
+  color: #fff;
+}
+.reaction-media.hidden, .bank-overlay.hidden { display: none !important; }
+
 #toast-container {
   position: fixed;
   bottom: 20px;

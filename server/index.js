@@ -14,7 +14,7 @@ const {
   handleStartGame,
   handleResetGame,
   loadBustGifs,
-  loadBankGifs
+  
 } = require('./sseHandlers');
 
 const DEFAULT_PORT = 3000;
@@ -62,7 +62,6 @@ function createServer() {
   // Load media files for reaction animations
   const mediaPath = path.join(__dirname, '..', 'media');
   const bustGifs = loadBustGifs(mediaPath);
-  const bankGifs = loadBankGifs(mediaPath);
 
   // Enable JSON body parsing for REST endpoints
   app.use(express.json());
@@ -124,7 +123,7 @@ function createServer() {
   });
 
   app.post('/api/bank', (req, res) => {
-    handleBankScore(req, res, serverState, bankGifs);
+    handleBankScore(req, res, serverState);
   });
 
   // TV client actions

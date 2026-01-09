@@ -196,6 +196,11 @@ This walkthrough assumes compliance with:
 - TV updates scoreboard
 - Active player indicator moves
 
+**Reaction / UX note:**
+- When a bank occurs, the server broadcasts a structured `reaction` event containing `type: 'bank'`, the `playerId`, optional `playerName`, `bankAmount`, and `previousTotal`.
+- Clients should show a short bank overlay sequence: display the player's name and banked points for 0.5s, animate the transfer (1s) where the previous total counts up and the bank amount counts down, then display the updated total for 0.5s before removing the overlay.
+- Bank overlays are high-priority: they should interrupt any concurrently playing visual reactions (such as a bust animation) and prevent lower-priority reactions from overriding the bank display.
+
 ---
 
 ## 6. Minimum Entry Score Edge Case

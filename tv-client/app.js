@@ -18,6 +18,23 @@
       this.mediaEl.loop = false;
       this.overlayEl.appendChild(this.mediaEl);
 
+      // Create text-based bank overlay elements
+      this.bankEl = document.createElement('div');
+      this.bankEl.className = 'bank-overlay';
+      this.bankEl.setAttribute('aria-hidden', 'true');
+
+      this.bankAmountEl = document.createElement('div');
+      this.bankAmountEl.className = 'bank-amount';
+      this.bankPrevEl = document.createElement('div');
+      this.bankPrevEl.className = 'bank-prev';
+      this.bankLabelEl = document.createElement('div');
+      this.bankLabelEl.className = 'bank-label';
+
+      this.bankEl.appendChild(this.bankLabelEl);
+      this.bankEl.appendChild(this.bankAmountEl);
+      this.bankEl.appendChild(this.bankPrevEl);
+      this.overlayEl.appendChild(this.bankEl);
+
       this.overlayEl.addEventListener('click', () => this.hide());
 
       if (this.root && this.root.appendChild) {
@@ -29,6 +46,7 @@
     }
 
     show(mediaUrl) {
+      // Generic media-based reaction
       if (this.active) {
         return;
       }
@@ -36,8 +54,12 @@
         return;
       }
 
+      this._clearAll();
       this.active = true;
+      this.currentType = 'media';
       this.overlayEl.classList.add('visible');
+      this.mediaEl.classList.remove('hidden');
+      this.bankEl.classList.add('hidden');
       this.mediaEl.src = mediaUrl;
       this.mediaEl.currentTime = 0;
       this.mediaEl.play().catch(() => {});
@@ -57,19 +79,98 @@
       };
     }
 
+    showBank({ bankAmount = 0, previousTotal = 0, playerName = null }) {
+      // Bank overlay takes precedence: interrupt any ongoing media reaction
+      this._clearAll();
+      this.active = true;
+      this.currentType = 'bank';
+      this.overlayEl.classList.add('visible');
+      this.mediaEl.classList.add('hidden');
+      this.bankEl.classList.remove('hidden');
+
+      // Initialize display
+      this.bankLabelEl.textContent = playerName ? `${playerName} banked points:` : 'Banked points:';
+      this.bankAmountEl.textContent = `+${bankAmount}`;
+      this.bankPrevEl.textContent = `${previousTotal}`;
+
+      // Sequence: show initial numbers for 0.5s, animate transfer for 1s, show final total 0.5s
+      const showInitial = () => {
+        this.bankAmountEl.style.opacity = '1';
+        this.bankPrevEl.style.opacity = '1';
+      };
+
+      const animateTransfer = () => {
+        const duration = 1000;
+        const start = Date.now();
+        const fromPrev = previousTotal;
+        const toPrev = previousTotal + bankAmount;
+        const fromBank = bankAmount;
+        const tick = () => {
+          const now = Date.now();
+          const t = Math.min(1, (now - start) / duration);
+          // prev counts up linearly
+          const currentPrev = Math.floor(fromPrev + (toPrev - fromPrev) * t);
+          // bank counts down in steps of 10
+          const remainingBank = Math.max(0, Math.ceil((fromBank * (1 - t)) / 10) * 10);
+          this.bankPrevEl.textContent = `${currentPrev}`;
+          this.bankAmountEl.textContent = `+${remainingBank}`;
+          if (t < 1) {
+            this.transferTimer = requestAnimationFrame(tick);
+          } else {
+            this.bankPrevEl.textContent = `${toPrev}`;
+            this.bankAmountEl.textContent = `+0`;
+          }
+        };
+        tick();
+      };
+
+      showInitial();
+      this.hideTimer = setTimeout(() => {
+        animateTransfer();
+        // After 1s (transfer), show final for 0.5s then clear
+        this.hideTimer = setTimeout(() => this.hide(), 1500);
+      }, 500);
+    }
+
     hide() {
-      if (!this.active) {
-        return;
-      }
+      if (!this.active) return;
       this.active = false;
+      this.currentType = null;
       if (this.hideTimer) {
         clearTimeout(this.hideTimer);
         this.hideTimer = null;
+      }
+      if (this.transferTimer) {
+        cancelAnimationFrame(this.transferTimer);
+        this.transferTimer = null;
+      }
+      // Reset media
+      this.mediaEl.pause();
+      this.mediaEl.removeAttribute('src');
+      this.mediaEl.load();
+      // Reset visibility
+      this.overlayEl.classList.remove('visible');
+      this.mediaEl.classList.remove('hidden');
+      this.bankEl.classList.add('hidden');
+    }
+
+    _clearAll() {
+      if (this.hideTimer) {
+        clearTimeout(this.hideTimer);
+        this.hideTimer = null;
+      }
+      if (this.transferTimer) {
+        cancelAnimationFrame(this.transferTimer);
+        this.transferTimer = null;
       }
       this.mediaEl.pause();
       this.mediaEl.removeAttribute('src');
       this.mediaEl.load();
       this.overlayEl.classList.remove('visible');
+      this.mediaEl.classList.remove('hidden');
+      this.bankEl.classList.add('hidden');
+      this.active = false;
+      this.currentType = null;
     }
   }
 
@@ -297,8 +398,22 @@
   });
 
   connection.on('reaction', payload => {
-    if (payload && payload.mediaUrl) {
-      if (payload.type === 'bust' || payload.type === 'bank') {
+    if (!payload) return;
+    // If this is a structured bank reaction, use the bank overlay
+    if (payload.type === 'bank') {
+      // bank overlay has priority
+      const bankAmount = typeof payload.bankAmount === 'number' ? payload.bankAmount : 0;
+      const previousTotal = typeof payload.previousTotal === 'number' ? payload.previousTotal : 0;
+      const playerName = typeof payload.playerName === 'string' ? payload.playerName : null;
+      reactionOverlay.showBank({ bankAmount, previousTotal, playerName });
+      return;
+    }
+
+    // Fallback: media-based reaction
+    if (payload.mediaUrl) {
+      if (payload.type === 'bust') {
+        // If a bank overlay is active, do not override it
+        if (reactionOverlay.currentType === 'bank' && reactionOverlay.active) return;
         reactionOverlay.show(payload.mediaUrl);
       }
     }

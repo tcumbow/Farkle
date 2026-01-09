@@ -94,6 +94,28 @@ event: reaction
 data: {"type":"bust","playerId":"abc123","mediaUrl":"/media/bust/random.gif"}
 ```
 
+For bank events the server now emits a structured, text-first payload instead of (or in addition to) a media URL. Clients should prefer the structured payload to present a numeric bank overlay.
+
+```
+event: reaction
+data: {
+  "type": "bank",
+  "playerId": "abc123",
+  "playerName": "Ivy",
+  "bankAmount": 150,
+  "previousTotal": 350,
+  "priority": "high"
+}
+```
+
+Notes:
+- `playerName`: human-friendly display name for the player who banked (optional)
+- `bankAmount`: number of points banked in this action (integer)
+- `previousTotal`: player's score before banking (integer)
+- `priority`: when present and set to `high`, clients should give this reaction precedence over media reactions (e.g., interrupt a playing bust animation)
+
+Clients that receive a structured `bank` reaction should display a text-based overlay showing the player's name, the banked amount, and the previous total, animate the transfer of points into the player's score, and then hide the overlay. Media-based reactions (e.g., `.webm` files) are still supported for `bust` and other visual effects but should not override a live `bank` overlay marked as high priority.
+
 #### `error`
 
 Sent for server-side errors that need client notification.

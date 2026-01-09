@@ -588,6 +588,7 @@ function bankTurnScore(gameState) {
 
   playersCopy[playerIndex] = {
     ...player,
+    _previousTotal: player.totalScore,
     totalScore: newTotal,
     hasEnteredGame: player.hasEnteredGame || bankTotal >= minimumEntry
   };

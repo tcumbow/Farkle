@@ -363,7 +363,7 @@ function handleRollDice(req, res, serverState, bustGifs) {
   }
 }
 
-function handleBankScore(req, res, serverState, bankGifs) {
+function handleBankScore(req, res, serverState) {
   const { playerId, playerSecret } = req.body || {};
 
   console.log(`[api] bank_score: playerId=${playerId}`);
@@ -407,13 +407,22 @@ function handleBankScore(req, res, serverState, bankGifs) {
 
   res.json({ success: true, outcome: result.outcome || 'continue' });
 
-  // Send bank reaction
-  const bankGif = bankGifs && bankGifs.length > 0
-    ? bankGifs[Math.floor(Math.random() * bankGifs.length)]
-    : null;
-  if (bankGif) {
-    broadcastReaction('bank', playerId, bankGif);
-  }
+  // Send structured bank reaction (text-first). Include previous total and bank amount so clients can animate the transfer.
+  // Compute bankAmount and previousTotal from the updated game state.
+  const playerObj = serverState.game.players.find(p => p.playerId === playerId) || null;
+  const bankAmount = playerObj ? (playerObj.totalScore - (playerObj._previousTotal || 0)) : 0;
+  const previousTotal = playerObj && typeof playerObj._previousTotal === 'number'
+    ? playerObj._previousTotal
+    : Math.max(0, (playerObj ? playerObj.totalScore : 0) - bankAmount);
+
+  broadcast('reaction', {
+    type: 'bank',
+    playerId,
+    playerName: playerObj ? playerObj.name : null,
+    bankAmount,
+    previousTotal,
+    priority: 'high'
+  });
 
   // Broadcast updated game state
   broadcastGameState(serverState);
@@ -504,30 +513,6 @@ function loadBustGifs(mediaPath) {
   }
 }
 
-function loadBankGifs(mediaPath) {
-  const fs = require('fs');
-  const path = require('path');
-  const bankDir = path.join(mediaPath, 'bank');
-
-  try {
-    if (!fs.existsSync(bankDir)) {
-      console.log('[sse] No bank media directory found');
-      return [];
-    }
-
-    const files = fs.readdirSync(bankDir);
-    const gifs = files
-      .filter(f => /\.(webm)$/i.test(f))
-      .map(f => `/media/bank/${f}`);
-
-    console.log(`[sse] Loaded ${gifs.length} bank media files`);
-    return gifs;
-  } catch (err) {
-    console.warn('[sse] Failed to load bank gifs:', err.message);
-    return [];
-  }
-}
-
 // ============================================================================
 // Exports
 // ============================================================================
@@ -547,6 +532,5 @@ module.exports = {
   handleStartGame,
   handleResetGame,
   loadBustGifs,
-  loadBankGifs,
   sseClients
 };

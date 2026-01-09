@@ -67,6 +67,12 @@ This is a personal project optimized for simplicity, debuggability, and fidelity
 - Shows private player state (dice selections) in real time
  - Animates dice when new rolls arrive to signal change
 
+#### Bank Reaction Overlay
+
+- The TV client prefers structured `bank` reactions from the server (SSE `reaction` event with `type: 'bank'`).
+- When received, the TV displays a text-first overlay with a label like "[Name] banked points:", the banked amount (e.g., "+150"), and the previous total. The overlay animates the transfer of points into the player's total (brief pause → transfer animation → final total), then hides.
+- Bank overlays are high-priority and interrupt media-based reactions (e.g., bust `.webm`) to ensure the banking event is clearly visible.
+
 ### Phone Client
 
 - One phone == one player
