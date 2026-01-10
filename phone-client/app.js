@@ -329,12 +329,10 @@
   const credentialsCard = document.getElementById('credentials');
   const playerSummaryEl = document.getElementById('player-summary');
   const leaveButton = document.getElementById('leave-button');
-  const gameInfoEl = document.getElementById('game-info');
   const toastContainer = document.getElementById('toast-container');
   const toastTemplate = document.getElementById('message-template');
   const turnCard = document.getElementById('turn-card');
   const turnTitle = document.getElementById('turn-title');
-  const turnPhaseEl = document.getElementById('turn-phase');
   const turnStatusLine = document.getElementById('turn-status-line');
   const turnAccumulatedEl = document.getElementById('turn-accumulated');
   const turnSelectionEl = document.getElementById('turn-selection');
@@ -388,7 +386,7 @@
     }
 
     updateCredentials(currentIdentity);
-    renderGameInfo(null);
+    updateJoinVisibility(null);
     renderTurnState(null);
     updateJoinAvailability();
   }
@@ -423,8 +421,8 @@
 
     connection.on('game_state', gameState => {
       latestGameState = gameState;
-      renderGameInfo(gameState);
       updateJoinAvailability();
+      updateJoinVisibility(gameState);
       const identity = getIdentity();
       if (identity && (!gameState || !gameState.players || !gameState.players.some(p => p.playerId === identity.playerId))) {
         // Identity is stale relative to game; clear it so user can rejoin.
@@ -625,22 +623,6 @@
     leaveButton.disabled = !identity;
   }
 
-  function renderGameInfo(gameState) {
-    if (!gameState) {
-      gameInfoEl.textContent = `Game ID ${gameId}`;
-      updateJoinVisibility(null);
-      return;
-    }
-
-    const phase = gameState.phase || 'unknown';
-    const playerCount = Array.isArray(gameState.players) ? gameState.players.length : 0;
-    let text = `Game ID ${gameState.gameId || gameId} — ${phase.toUpperCase()} — ${playerCount} player${playerCount === 1 ? '' : 's'}`;
-    if (phase !== 'lobby') {
-      text += ' (joining closed)';
-    }
-    gameInfoEl.textContent = text;
-    updateJoinVisibility(gameState);
-  }
 
   function updateJoinVisibility(gameState) {
     const isLobby = !gameState || gameState.phase === 'lobby';
@@ -665,8 +647,6 @@
 
     showElement(turnCard);
 
-    const phase = gameState && gameState.phase ? gameState.phase : null;
-    turnPhaseEl.textContent = phase ? phase.toUpperCase() : '—';
 
     if (!gameState) {
       turnTitle.textContent = `Welcome, ${identity.name || 'Player'}`;

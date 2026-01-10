@@ -187,13 +187,6 @@ html, body {
   font-size: 24px;
 }
 
-.turn-header p {
-  font-size: 14px;
-  color: #9fa8da;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-}
-
 .turn-info {
   display: flex;
   flex-direction: column;
