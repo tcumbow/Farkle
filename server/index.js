@@ -162,9 +162,7 @@ function createServer() {
   httpServer.listen(port, '0.0.0.0', () => {
     const serverHost = getServerHost();
     // eslint-disable-next-line no-console
-    console.log('[farkle] server listening on 0.0.0.0:', port);
-    // eslint-disable-next-line no-console
-    console.log('[farkle] TV URL:', `http://${serverHost}:${port}`);
+    console.log('[farkle] Open this URL on your TV:', `http://${serverHost}:${port}`);
     // eslint-disable-next-line no-console
     console.log(eventLogEnabled ? '[farkle] event log enabled' : '[farkle] event log disabled');
   });
