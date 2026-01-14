@@ -16,7 +16,7 @@ The `docs/` folder contains **authoritative specifications**—always consult be
 - [design.md](docs/design.md) — Overall architecture and game rules
 - [server-state-schema.md](docs/server-state-schema.md) — Exact state shape (`GameState`, `TurnState`, etc.)
 - [sse-rest-api-schema.md](docs/sse-rest-api-schema.md) — All SSE events and REST endpoints
-- [dice-scoring-rules.md](docs/dice-scoring-rules.md) — Scoring combinations (1s=100, 5s=50, triplets, etc.)
+- [dice-scoring-rules.md](docs/dice-scoring-rules.md) — Scoring combinations and authoritative values (see doc for n-of-a-kind fixed scores)
 - [turn-lifecycle-walkthrough.md](docs/turn-lifecycle-walkthrough.md) — Turn flow and state transitions
 
 **Never invent behavior**—resolve ambiguity by referencing these docs.
@@ -54,12 +54,16 @@ Uses `crypto.randomInt(1, 7)` for secure randomness—never use `Math.random()`.
 ### Auto-Selection
 After each roll, server computes and applies the best valid selection automatically via `getBestScore()`.
 
+### Banking Logic
+Banking uses `turn.bestSelectableScore` (the best possible score from all selectable dice) rather than the current selection. This ensures players cannot short-change themselves by deselecting dice before banking.
+
 ## Testing
 
 Tests use a custom framework with assertion helpers. Run with:
 ```powershell
 node server/scoring.test.js
 node server/gameEngine.test.js
+node server/state.test.js
 ```
 
 To mock dice rolls in tests, use `withMockedRandomInts()`:
@@ -85,6 +89,7 @@ Phone client: `http://localhost:3000/join?gameId=<id>`
 
 - Clients are **views only**—never compute scores client-side
 - Both clients share identical `ReactionOverlay` class for bust/bank animations
-- Bank overlays are high-priority and interrupt media reactions
+- Bank reactions use structured payloads (`type: 'bank'`, `bankAmount`, `previousTotal`, `playerName`)
+- Bank overlays are high-priority and interrupt media-based reactions (e.g., bust videos)
 - SSE reconnection is handled automatically by `EventSource`
 - Player credentials stored in `localStorage` for reconnection
