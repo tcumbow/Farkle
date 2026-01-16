@@ -617,7 +617,7 @@
     dice.forEach((die, index) => {
       const dieEl = document.createElement('div');
       dieEl.classList.add('die');
-      dieEl.textContent = String(die.value);
+      dieEl.textContent = die.value === null || typeof die.value === 'undefined' ? '' : String(die.value);
 
       if (die.selectable) {
         dieEl.classList.add('selectable');
@@ -722,6 +722,8 @@
     switch (status) {
       case 'awaiting_selection':
         return 'Awaiting Selection';
+      case 'awaiting_first_roll':
+        return 'Awaiting First Roll';
       case 'awaiting_roll':
         return 'Ready to Roll';
       case 'awaiting_bank':

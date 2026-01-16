@@ -711,7 +711,9 @@
       return;
     }
 
-    renderDice(turn.dice || [], selectedIndices, true);
+    // When awaiting the first roll, dice should appear blank and not be interactive
+    const allowDiceInteraction = turn.status !== 'awaiting_first_roll';
+    renderDice(turn.dice || [], selectedIndices, allowDiceInteraction);
 
     turnTitle.textContent = `Your turn, ${playerState.name}!`;
     turnStatusLine.textContent = `Status: ${formatTurnStatus(turn.status)}`;
@@ -731,7 +733,9 @@
     const allSelectableSelected = selectableIndices.length > 0 && 
                                    selectableIndices.every(index => selectedSet.has(index));
     
-    if (rollEnabled && allSelectableSelected) {
+    if (turn.status === 'awaiting_first_roll') {
+      rollButton.textContent = 'First Roll';
+    } else if (rollEnabled && allSelectableSelected) {
       rollButton.textContent = '"Free" Roll';
     } else if (rollEnabled) {
       const diceToRoll = selectableIndices.filter(index => !selectedSet.has(index)).length;
@@ -837,11 +841,13 @@
     }
 
     const selection = turn.selection || { isValid: false, selectedIndices: [] };
-    if (!selection.isValid) {
+    // During the initial state the selection will be empty/invalid; allow the
+    // player to Roll in that specific case (awaiting_first_roll).
+    if (!selection.isValid && turn.status !== 'awaiting_first_roll') {
       return false;
     }
 
-    if (turn.status && turn.status !== 'awaiting_roll' && turn.status !== 'awaiting_bank') {
+    if (turn.status && turn.status !== 'awaiting_roll' && turn.status !== 'awaiting_bank' && turn.status !== 'awaiting_first_roll') {
       return false;
     }
 
@@ -891,6 +897,11 @@
       return true;
     }
 
+    // Do not allow banking before the first roll
+    if (turn.status === 'awaiting_first_roll') {
+      return false;
+    }
+
     return false;
   }
 
@@ -922,7 +933,7 @@
         dieEl.classList.add('selected');
       }
 
-      dieEl.textContent = String(die.value);
+      dieEl.textContent = die.value === null || typeof die.value === 'undefined' ? '' : String(die.value);
 
       if (shouldAnimate) {
         requestAnimationFrame(() => {
@@ -956,6 +967,8 @@
         return 'Select scoring dice to continue.';
       case 'awaiting_roll':
         return selection.isValid ? 'Roll remaining dice or bank your points.' : 'Adjust dice until the selection is valid.';
+      case 'awaiting_first_roll':
+        return 'Tap Roll to perform your first roll.';
       case 'awaiting_bank':
         return 'You may bank now or keep rolling.';
       default:
@@ -967,6 +980,8 @@
     switch (status) {
       case 'awaiting_selection':
         return 'Awaiting Selection';
+      case 'awaiting_first_roll':
+        return 'Awaiting First Roll';
       case 'awaiting_roll':
         return 'Awaiting Roll';
       case 'awaiting_bank':

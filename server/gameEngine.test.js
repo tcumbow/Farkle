@@ -147,15 +147,11 @@ function runTests() {
   assertEquals(startResult.gameState.turn.dice.length, 6, 'Turn has 6 dice');
   assertEquals(startResult.gameState.turn.accumulatedTurnScore, 0, 'Turn score starts at 0');
   const initialSelection = startResult.gameState.turn.selection;
-  if (initialSelection.selectedIndices.length > 0) {
-    assert(initialSelection.isValid, 'Auto selection is valid when dice score');
-    assert(initialSelection.selectionScore > 0, 'Auto selection has positive score when present');
-    assertEquals(startResult.gameState.turn.status, 'awaiting_roll', 'Status is awaiting_roll when auto selection exists');
-  } else {
-    assert(!initialSelection.isValid, 'Empty auto selection marked invalid');
-    assertEquals(initialSelection.selectionScore, 0, 'Empty auto selection scores zero');
-    assertEquals(startResult.gameState.turn.status, 'awaiting_selection', 'Status is awaiting_selection when no scoring dice');
-  }
+  // New behavior: the game does not perform an automatic first roll. The turn
+  // should be in 'awaiting_first_roll' with blank dice and no auto-selection.
+  assertEquals(Array.isArray(startResult.gameState.turn.selection.selectedIndices) ? startResult.gameState.turn.selection.selectedIndices.length : 0, 0, 'No auto selection at start');
+  assertEquals(startResult.gameState.turn.selection.selectionScore, 0, 'Empty auto selection scores zero');
+  assertEquals(startResult.gameState.turn.status, 'awaiting_first_roll', 'Status is awaiting_first_roll on turn start');
 
   withMockedRandomInts([1, 5, 2, 2, 2, 3], () => {
     const seededGame = createNewGame();
@@ -165,12 +161,12 @@ function runTests() {
     assert(seededAddTwo.success, 'Seeded add player two succeeds');
     const seededStart = startGame(seededAddTwo.gameState);
     assert(seededStart.success, 'Seeded startGame succeeds');
+    // With the new UX the game should not auto-roll; selection remains empty
     const autoSelection = seededStart.gameState.turn.selection;
-    assertEquals(autoSelection.selectedIndices.length, 5, 'Auto selection picks maximum scoring dice');
-    assert(autoSelection.isValid, 'Seeded auto selection is valid');
-    assertEquals(seededStart.gameState.turn.status, 'awaiting_roll', 'Seeded auto selection sets awaiting_roll');
-    assertEquals(autoSelection.selectionScore, 350, 'Seeded auto selection scores expected total');
-    assertEquals(autoSelection.selectedIndices.join(','), '0,1,2,3,4', 'Auto selection targets expected dice indices');
+    assertEquals(autoSelection.selectedIndices.length, 0, 'No auto selection at seeded start');
+    assertEquals(seededStart.gameState.turn.status, 'awaiting_first_roll', 'Seeded start sets awaiting_first_roll');
+    assertEquals(autoSelection.selectionScore, 0, 'Seeded auto selection scores zero');
+    assertEquals(autoSelection.selectedIndices.join(','), '', 'Auto selection targets none');
   });
 
   // Test error cases
@@ -213,9 +209,11 @@ function runTests() {
 
     withMockedRandomInts([2, 3, 4, 6, 2, 3, 1, 2, 3, 4, 6, 2], () => {
       const startBust = startGame(bustStartGame);
-      assert(startBust.success, 'Start game succeeds even when initial roll is a bust');
-      assertEquals(startBust.outcome, 'bust', 'Bust outcome returned from startGame');
-      assertEquals(startBust.gameState.activeTurnIndex, 1, 'Turn moves to next player after immediate bust');
+      // With the new UX the initial roll is not performed by startGame, so there
+      // should be no immediate bust outcome and the active player remains 0.
+      assert(startBust.success, 'Start game succeeds even when initial roll would be a bust');
+      assertEquals(startBust.outcome, undefined, 'No bust outcome returned from startGame');
+      assertEquals(startBust.gameState.activeTurnIndex, 0, 'Turn remains with first player after start');
     });
 
   // Test error case

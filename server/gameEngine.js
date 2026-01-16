@@ -40,6 +40,19 @@ function rollDice(count, selectable = true) {
 }
 
 /**
+ * Create an array of blank dice (no value shown) used before the first roll.
+ * @param {number} count - Number of blank dice
+ * @returns {DieState[]}
+ */
+function blankDice(count) {
+  const dice = [];
+  for (let i = 0; i < count; i++) {
+    dice.push({ value: null, selectable: false });
+  }
+  return dice;
+}
+
+/**
  * Roll initial dice for a new turn (6 dice, all selectable).
  * 
  * @returns {DieState[]} Six rolled dice
@@ -307,7 +320,8 @@ function startGame(gameState) {
   }
 
   // Roll initial dice for first player
-  const initialDice = rollInitialDice();
+  // Start with blank dice so the player must press Roll for their first roll
+  const initialDice = blankDice(6);
 
   // Create a new game state (pure - don't mutate)
   const newGameState = {
@@ -315,7 +329,7 @@ function startGame(gameState) {
     phase: 'in_progress',
     activeTurnIndex: 0,
     finalRound: normalizeFinalRound(gameState),
-    turn: applyDefaultSelectionToTurn({
+    turn: {
       playerId: gameState.turnOrder[0],
       dice: initialDice,
       accumulatedTurnScore: 0,
@@ -324,8 +338,9 @@ function startGame(gameState) {
         isValid: false,
         selectionScore: 0
       },
-      status: 'awaiting_selection'
-    })
+      bestSelectableScore: 0,
+      status: 'awaiting_first_roll'
+    }
   };
 
   const bustCheck = handleImmediateBust(newGameState);
@@ -361,14 +376,15 @@ function advanceToNextTurn(gameState) {
   const nextPlayerId = gameState.turnOrder[nextIndex];
 
   // Roll initial dice for next player
-  const nextPlayerDice = rollInitialDice();
+  // Start next player's turn with blank dice awaiting their first roll
+  const nextPlayerDice = blankDice(6);
 
   // Create new game state
   const newGameState = {
     ...gameState,
     activeTurnIndex: nextIndex,
     finalRound: normalizeFinalRound(gameState),
-    turn: applyDefaultSelectionToTurn({
+    turn: {
       playerId: nextPlayerId,
       dice: nextPlayerDice,
       accumulatedTurnScore: 0,
@@ -377,8 +393,9 @@ function advanceToNextTurn(gameState) {
         isValid: false,
         selectionScore: 0
       },
-      status: 'awaiting_selection'
-    })
+      bestSelectableScore: 0,
+      status: 'awaiting_first_roll'
+    }
   };
 
   const bustCheck = handleImmediateBust(newGameState);
@@ -406,9 +423,28 @@ function initializeTurnState(playerId, dice, accumulatedTurnScore = 0) {
     throw new Error('Cannot initialize turn with no dice');
   }
 
+  const copiedDice = dice.map(d => ({ ...d }));
+
+  // If dice are blank (value === null for all), the turn should await the player's first roll
+  const allBlank = copiedDice.every(d => d.value === null);
+  if (allBlank) {
+    return {
+      playerId,
+      dice: copiedDice,
+      accumulatedTurnScore,
+      selection: {
+        selectedIndices: [],
+        isValid: false,
+        selectionScore: 0
+      },
+      bestSelectableScore: 0,
+      status: 'awaiting_first_roll'
+    };
+  }
+
   return applyDefaultSelectionToTurn({
     playerId,
-    dice: dice.map(d => ({ ...d })), // Copy dice
+    dice: copiedDice, // Copy dice
     accumulatedTurnScore,
     selection: {
       selectedIndices: [],
@@ -432,6 +468,62 @@ function rollTurnDice(gameState) {
 
   const turn = gameState.turn;
   const dice = turn.dice || [];
+
+  // Special-case: if this is the player's first roll on their turn, allow rolling
+  // when status is 'awaiting_first_roll'. In that case no selection is required.
+  if (turn.status === 'awaiting_first_roll') {
+    // Perform initial roll for all dice
+    const newDice = rollInitialDice();
+
+    // If the rolled selectable values are an immediate bust, handle it
+    const rolledValues = newDice.map(d => d.value);
+    const busted = rolledValues.length > 0 && isBust(rolledValues);
+    if (busted) {
+      const finalRound = normalizeFinalRound(gameState);
+      const updatedFinalRound = removeFromRemaining(finalRound, turn.playerId);
+
+      const clearedGame = {
+        ...gameState,
+        players: clonePlayers(gameState.players),
+        turn: null,
+        finalRound: updatedFinalRound
+      };
+
+      if (updatedFinalRound.active && updatedFinalRound.remainingPlayerIds.length === 0) {
+        const finished = finishGame(clearedGame);
+        return finished.success ? { success: true, gameState: finished.gameState, outcome: 'bust' } : { success: false, error: finished.error || 'FINISH_FAILED' };
+      }
+
+      const advanceResult = advanceToNextTurn(clearedGame);
+      if (!advanceResult.success) {
+        return { success: false, error: advanceResult.error || 'ADVANCE_FAILED' };
+      }
+      return { success: true, gameState: advanceResult.gameState, outcome: 'bust' };
+    }
+
+    // Build new turn state: replace blank dice with rolled dice and apply default selection
+    const newTurn = {
+      ...turn,
+      dice: newDice,
+      accumulatedTurnScore: 0,
+      selection: {
+        selectedIndices: [],
+        isValid: false,
+        selectionScore: 0
+      },
+      status: 'awaiting_selection'
+    };
+
+    const turnWithDefaultSelection = applyDefaultSelectionToTurn(newTurn);
+
+    const newGameState = {
+      ...gameState,
+      players: clonePlayers(gameState.players),
+      turn: turnWithDefaultSelection
+    };
+
+    return { success: true, gameState: newGameState };
+  }
 
   if (!turn.selection || !turn.selection.isValid || turn.selection.selectedIndices.length === 0) {
     return { success: false, error: 'INVALID_SELECTION' };
