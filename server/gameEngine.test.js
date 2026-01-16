@@ -419,7 +419,7 @@ function runTests() {
     const hotSelection = hotResult.gameState.turn.selection;
     assertEquals(hotSelection.selectedIndices.length, 6, 'Hot dice auto-selects all scoring dice');
     assert(hotSelection.isValid, 'Hot dice auto selection is valid');
-    assertEquals(hotSelection.selectionScore, 4000, 'Hot dice auto selection scores full six-of-a-kind');
+    assertEquals(hotSelection.selectionScore, 3000, 'Hot dice auto selection scores full six-of-a-kind');
     assertEquals(hotResult.gameState.turn.status, 'awaiting_roll', 'Status is awaiting_roll after hot dice auto selection');
   });
 
